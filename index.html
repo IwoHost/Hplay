@@ -358,6 +358,17 @@
   .cfmbtn.sel{ background:linear-gradient(180deg,#84bef0,#2064c6); color:#fff; }
   .cfmbtn.del.sel{ background:linear-gradient(180deg,#f28b7d,#d63a2a); color:#fff; }
   .hidden{ display:none !important; }
+  .decalLayer{ position:absolute; inset:0; z-index:1; pointer-events:none; overflow:hidden; }
+  .decalLayer img{ position:absolute; filter:drop-shadow(0 .3vh .8vh rgba(0,0,0,.35)); }
+  .engraving{
+    flex:0 0 auto; text-align:center; padding:0 8vw; max-width:84vw;
+    font-family:'Snell Roundhand','Brush Script MT',cursive;
+    font-style:italic; font-size:min(4.4vw, 2.2dvh); letter-spacing:.02em;
+    color:rgba(255,255,255,.52);
+    text-shadow:0 -1px 1px rgba(0,10,40,.55), 0 1px 0 rgba(255,255,255,.2);
+    overflow:hidden; white-space:nowrap; text-overflow:ellipsis; z-index:2; pointer-events:none;
+  }
+  body.darkui .engraving{ color:rgba(255,255,255,.4); }
 
   /* ============ BOOT SCREEN ============ */
   .bootscreen{
@@ -399,6 +410,7 @@
 <body>
 
 <div class="ipod" id="ipod">
+  <div class="decalLayer" id="decalLayer"></div>
   <div class="bezel">
     <div class="screen" id="screen"></div>
     <div class="bootscreen" id="bootScreen"><div class="bgrp"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAGHaVRYdFhNTDpjb20uYWRvYmUueG1wAAAAAAA8P3hwYWNrZXQgYmVnaW49J++7vycgaWQ9J1c1TTBNcENlaGlIenJlU3pOVGN6a2M5ZCc/Pg0KPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyI+PHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj48cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0idXVpZDpmYWY1YmRkNS1iYTNkLTExZGEtYWQzMS1kMzNkNzUxODJmMWIiIHhtbG5zOnRpZmY9Imh0dHA6Ly9ucy5hZG9iZS5jb20vdGlmZi8xLjAvIj48dGlmZjpPcmllbnRhdGlvbj4xPC90aWZmOk9yaWVudGF0aW9uPjwvcmRmOkRlc2NyaXB0aW9uPjwvcmRmOlJERj48L3g6eG1wbWV0YT4NCjw/eHBhY2tldCBlbmQ9J3cnPz4slJgLAAACPUlEQVR4Xu2ZzXECMQyFtWmAGiiBRuiEauiERiiBGlLB5oIY8Ub+kWx5Z2J/p4xsS3pPXg4x0WIxNRsGRnHZbzvGntt9eD/DC0rhv4/XJ366nj9/jzRiWKGUcGS0EeEFSIjPCUfYiGgTQpPXTj3FiNsQkrRVOBJpRNdkvYUjEUZ0SRItHOlpRNNhaviB0/an4il6/FC6D3qmLiennSmta7TeBvOBVuHP7b5d9tuunT1dz591jmn7NLDG12KG6o0tTWFDJQNkzPqJWY0obugpnLEYwEQZkVwgR1EqiGA8BjCpsylKw/jBAGMVf7qeqwS08tzuG9eqgfuXN1mSNIAqxUvh0eIZrlVrRE5H1oAcRwhHrEZouAwofVej4T48JpgNOHrqKeRtsGA24L+xDMDAbCwDMDAbywAMzMYyAAOzsQzAwGwsAzAwG8sADMzGMgADs7EMwMBsLAMwMBsuAy77bU+9tByFtyezAb+PV/G5aTTyGS/3CqSRNSD3P3ZpwlFGyNo54Tkd2ceNmuRkeIpmUi+8/OiCcUQaruWRlF6x1KDEU4wyBanBgIhekgtIz+JWA3rWRoobkNrPgjLN1BpgEU4V112jeqPE2xi9mysZ0Jr/a7GAaTNiuQ0EjWpnSusanqlLXIck1mnRu2ltbyqu0TJ1ifsg4jHCQy/hTHMCxPpZWGi97hrdEkl634beU5d0TYa0GhEpnAlJing+i4jrrhGaXFJ7G0ZMXRJeAEkZMVo4M6yQRJqAjBS/WCzoD/1qsufnpD0YAAAAAElFTkSuQmCC" alt=""><div class="bhost">HostLab</div><div class="bname">HPlay</div></div></div>
@@ -409,6 +421,7 @@
     <div class="letter hidden" id="letter"></div>
     <div class="preview" id="preview"></div>
   </div>
+  <div class="engraving hidden" id="engraving"></div>
   <div class="wheelZone" id="wheel">
     <div class="wheelFace" id="wheelFace">
       <div class="wlab menu">MENU</div>
@@ -564,7 +577,7 @@ function removeNote(id){
 // installed extension "apps": { id, name, desc, html }, loaded from IDB store 'extapps'
 let extApps = [];
 // transient browse state for the store screens; null = not loaded yet, [] = loaded empty
-const market = { apps:null, themes:null, appsErr:null, themesErr:null };
+const market = { apps:null, themes:null, decals:null, appsErr:null, themesErr:null, decalsErr:null };
 function marketBase(){ return String(custom.marketUrl||'').replace(/\/+$/,''); }
 function resolveUrl(path){
   if(/^https?:\/\//i.test(path)) return path;
@@ -579,7 +592,11 @@ async function loadManifest(){
 }
 function setMarketUrl(){
   const u = prompt('Marketplace URL', custom.marketUrl || 'https://');
-  if(u!=null){ custom.marketUrl = u.trim(); saveSettings(); market.apps=market.themes=null; market.appsErr=market.themesErr=null; render(); }
+  if(u!=null){
+    custom.marketUrl = u.trim(); saveSettings();
+    market.apps=market.themes=market.decals=null; market.appsErr=market.themesErr=market.decalsErr=null;
+    render();
+  }
 }
 function openStoreApps(){
   stack.push({type:'storeapps', sel:0, top:0});
@@ -592,6 +609,12 @@ function openStoreThemes(){
   market.themes = null; market.themesErr = null; render();
   loadManifest().then(m=>{ market.themes = (m&&m.themes)||[]; render(); })
                  .catch(e=>{ market.themesErr = String(e&&e.message||e); render(); });
+}
+function openStoreDecals(){
+  stack.push({type:'storedecals', sel:0, top:0});
+  market.decals = null; market.decalsErr = null; render();
+  loadManifest().then(m=>{ market.decals = (m&&m.decals)||[]; render(); })
+                 .catch(e=>{ market.decalsErr = String(e&&e.message||e); render(); });
 }
 function extThemeKey(item){ return 'theme:'+(item.id||item.name); }
 function extThemeValid(t){
@@ -609,6 +632,52 @@ function installExtTheme(item){
   saveSettings();
   toast('Applied '+rec.name);
   render();
+}
+// installed decals: purely decorative images, no code — { id, name, blob, x, y, w, rot, hidden }
+let extDecals = [];
+function clampNum(v, lo, hi, def){ v = Number(v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def; }
+function decalKey(item){ return 'decal:'+(item.id||item.file); }
+function renderDecalLayer(){
+  const el = document.getElementById('decalLayer'); if(!el) return;
+  el.innerHTML = extDecals.filter(d=>!d.hidden).map(d=>
+    `<img src="${d.url}" style="left:${d.x}%;top:${d.y}%;width:${d.w}vw;transform:translate(-50%,-50%) rotate(${d.rot}deg);">`
+  ).join('');
+}
+async function installDecal(item){
+  if(!item || typeof item.file!=='string'){ toast('Invalid decal'); return; }
+  const key = decalKey(item);
+  try{
+    toast('Downloading '+(item.name||'decal')+'…');
+    const res = await fetch(resolveUrl(item.file), {cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const blob = await res.blob();
+    const rec = {
+      id:key, name:item.name||item.id||'Decal', blob,
+      x:clampNum(item.x,0,100,50), y:clampNum(item.y,0,100,50),
+      w:clampNum(item.w,4,40,14), rot:clampNum(item.rot,-180,180,0),
+      hidden:false
+    };
+    const i = extDecals.findIndex(x=>x.id===key);
+    if(i>=0){ if(extDecals[i].url){ try{ URL.revokeObjectURL(extDecals[i].url); }catch(e){} } }
+    rec.url = URL.createObjectURL(blob);
+    if(i>=0) extDecals[i]=rec; else extDecals.push(rec);
+    dbPut('extdecals', { id:rec.id, name:rec.name, blob:rec.blob, x:rec.x, y:rec.y, w:rec.w, rot:rec.rot, hidden:rec.hidden });
+    renderDecalLayer();
+    toast('Placed '+rec.name);
+    render();
+  }catch(e){ toast('Install failed'); }
+}
+function toggleDecalHidden(id){
+  const d = extDecals.find(x=>x.id===id); if(!d) return;
+  d.hidden = !d.hidden;
+  dbPut('extdecals', { id:d.id, name:d.name, blob:d.blob, x:d.x, y:d.y, w:d.w, rot:d.rot, hidden:d.hidden });
+  renderDecalLayer();
+}
+function removeDecal(id){
+  const i = extDecals.findIndex(x=>x.id===id);
+  if(i>=0){ if(extDecals[i].url){ try{ URL.revokeObjectURL(extDecals[i].url); }catch(e){} } extDecals.splice(i,1); }
+  dbDelete('extdecals', id);
+  renderDecalLayer();
 }
 function extAppKey(item){ return 'ext:'+(item.id||item.file); }
 async function installExtApp(item){
@@ -707,7 +776,7 @@ function idb(){
     let settled = false;
     const done = (val)=>{ if(settled) return; settled = true; res(val); };
     try{
-      const rq = indexedDB.open('hplay', 5);
+      const rq = indexedDB.open('hplay', 6);
       rq.onupgradeneeded = ()=>{
         const d = rq.result;
         if(!d.objectStoreNames.contains('songs')) d.createObjectStore('songs', {keyPath:'id'});
@@ -716,6 +785,7 @@ function idb(){
         if(!d.objectStoreNames.contains('notes')) d.createObjectStore('notes', {keyPath:'id'});
         if(!d.objectStoreNames.contains('extapps')) d.createObjectStore('extapps', {keyPath:'id'});
         if(!d.objectStoreNames.contains('extthemes')) d.createObjectStore('extthemes', {keyPath:'id'});
+        if(!d.objectStoreNames.contains('extdecals')) d.createObjectStore('extdecals', {keyPath:'id'});
       };
       rq.onsuccess = ()=>{
         db = rq.result;
@@ -781,21 +851,25 @@ function saveSettings(){
   dbPut('kv', { shuffle:settings.shuffle, repeat:settings.repeat, clicker:settings.clicker,
                 theme:themeName, wheel:wheelName, volume:audio.volume,
                 dark:custom.dark, wheelSize:custom.wheelSize, sway:custom.sway, devName:custom.devName,
-                marketUrl:custom.marketUrl,
+                marketUrl:custom.marketUrl, engraving:custom.engraving,
                 sleepEnd:sleepEndMode, fadeSec:fadeSec }, 'settings');
 }
 async function eraseAll(){
-  await dbClear('songs'); await dbClear('kv'); await dbClear('tags'); await dbClear('extapps'); await dbClear('extthemes');
+  await dbClear('songs'); await dbClear('kv'); await dbClear('tags');
+  await dbClear('extapps'); await dbClear('extthemes'); await dbClear('extdecals');
   dirHandle = null; folderNeedsTap = false; excluded.clear();
   lib.length = 0; playlist = []; pIdx = -1;
   audio.pause(); audio.removeAttribute('src');
   extApps.forEach(a=>{ if(a._blobUrl){ try{ URL.revokeObjectURL(a._blobUrl); }catch(e){} } });
   extApps.length = 0;
   extThemes.length = 0;
-  market.apps = market.themes = null; market.appsErr = market.themesErr = null;
+  extDecals.forEach(d=>{ if(d.url){ try{ URL.revokeObjectURL(d.url); }catch(e){} } });
+  extDecals.length = 0;
+  renderDecalLayer();
+  market.apps = market.themes = market.decals = null; market.appsErr = market.themesErr = market.decalsErr = null;
   stack.length = 1; stack[0] = {type:'main', sel:0, top:0};
   applyTheme('Blue'); applyWheelColor('Match');
-  custom.dark=false; custom.wheelSize='Normal'; custom.sway=true; custom.devName='Hplay'; custom.marketUrl='';
+  custom.dark=false; custom.wheelSize='Normal'; custom.sway=true; custom.devName='Hplay'; custom.marketUrl=''; custom.engraving='';
   applyCustom();
   settings.shuffle=false; settings.repeat='Off'; settings.clicker=true;
   appStats = { opens:0, playCount:0, playMs:0, quizAnswered:0, quizCorrect:0, quizBest:0, songPlays:{} };
@@ -805,6 +879,11 @@ async function eraseAll(){
 async function restore(){
   try{ extApps = await dbAll('extapps'); }catch(e){ extApps = []; }
   try{ extThemes = await dbAll('extthemes'); }catch(e){ extThemes = []; }
+  try{
+    const drows = await dbAll('extdecals');
+    extDecals = drows.map(d=>Object.assign({}, d, { url:URL.createObjectURL(d.blob) }));
+  }catch(e){ extDecals = []; }
+  renderDecalLayer();
   const s = await dbGet('kv','settings');
   if(s){
     if(typeof s.shuffle==='boolean') settings.shuffle = s.shuffle;
@@ -820,6 +899,7 @@ async function restore(){
     if(typeof s.sway==='boolean') custom.sway = s.sway;
     if(s.devName) custom.devName = String(s.devName).slice(0,20);
     if(typeof s.marketUrl==='string') custom.marketUrl = s.marketUrl;
+    if(typeof s.engraving==='string') custom.engraving = s.engraving.slice(0,40);
     applyCustom();
   }
   try{
@@ -1211,7 +1291,7 @@ const THEMES = {
 };
 let themeName = 'Blue';          // body color
 let wheelName = 'Match';         // wheel color ('Match' = follow body)
-const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay', marketUrl:'' };
+const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay', marketUrl:'', engraving:'' };
 const WHEEL_SIZES = { Small:['56vw','46dvh'], Normal:['64vw','52dvh'], Big:['74vw','60dvh'] };
 // installed downloadable themes: { id, name, b:[4], w:[4], c:[3], lab, labsh } — same shape as THEMES entries
 let extThemes = [];
@@ -1238,6 +1318,13 @@ function applyCustom(){
   const r = document.documentElement.style;
   r.setProperty('--wheelsize', sz[0]);
   r.setProperty('--wheelmax', sz[1]);
+  updateEngraving();
+}
+function updateEngraving(){
+  const el = document.getElementById('engraving'); if(!el) return;
+  const txt = (custom.engraving||'').trim();
+  el.textContent = txt;
+  el.classList.toggle('hidden', !txt);
 }
 
 /* ---------- fullscreen: any tap pushes the phone into Hplay mode ---------- */
@@ -1317,6 +1404,8 @@ function screenDef(sc){
       {lab:'Screen', val: custom.dark?'Dark':'Light', act(){ custom.dark=!custom.dark; applyCustom(); saveSettings(); render(); }},
       {lab:'Wheel Size', val: custom.wheelSize, act(){ const o=Object.keys(WHEEL_SIZES); custom.wheelSize=o[(o.indexOf(custom.wheelSize)+1)%o.length]; applyCustom(); saveSettings(); render(); }},
       {lab:'Art Motion', val: custom.sway?'On':'Off', act(){ custom.sway=!custom.sway; applyCustom(); saveSettings(); render(); }},
+      {lab:'Decals', arrow:true, go:{type:'decalsmanage', sel:0, top:0}},
+      {lab:'Engraving…', val: custom.engraving||'None', act(){ const n=prompt('Engrave a short message', custom.engraving||''); if(n!=null){ custom.engraving=n.trim().slice(0,40); applyCustom(); saveSettings(); render(); } }},
       {lab:'Name…', val: custom.devName, act(){ const n=prompt('Name your Hplay', custom.devName); if(n&&n.trim()){ custom.devName=n.trim().slice(0,20); saveSettings(); render(); } }},
     ]};
     case 'colors': return {title:'Body Color', items: allThemeNames().map(n=>(
@@ -1369,6 +1458,7 @@ function screenDef(sc){
     case 'store': return {title:'Get More', items:[
       {lab:'Browse Apps', arrow:true, act(){ openStoreApps(); }},
       {lab:'Browse Themes', arrow:true, act(){ openStoreThemes(); }},
+      {lab:'Browse Decals', arrow:true, act(){ openStoreDecals(); }},
       {lab:'Marketplace URL…', val: custom.marketUrl||'Not set', act(){ setMarketUrl(); }},
     ]};
     case 'storeapps': {
@@ -1395,6 +1485,28 @@ function screenDef(sc){
         val: !extThemeValid(t) ? 'Invalid' : (themeName===t.name ? 'Applied' : (extThemes.some(x=>x.id===extThemeKey(t)) ? 'Installed':'Get')),
         act(){ installExtTheme(t); }
       })) : [{lab:'No themes available', dim:true}]};
+    }
+    case 'storedecals': {
+      if(!custom.marketUrl) return {title:'Browse Decals', items:[
+        {lab:'Set a Marketplace URL first', dim:true},
+        {lab:'Marketplace URL…', act(){ setMarketUrl(); }},
+      ]};
+      if(market.decalsErr) return {title:'Browse Decals', items:[{lab:'Couldn’t load: '+market.decalsErr, dim:true}]};
+      if(market.decals===null) return {title:'Browse Decals', items:[{lab:'Loading…', dim:true}]};
+      return {title:'Browse Decals', items: market.decals.length ? market.decals.map(d=>({
+        lab:d.name||d.id, val: extDecals.some(x=>x.id===decalKey(d)) ? 'Installed':'Get',
+        act(){ installDecal(d); }
+      })) : [{lab:'No decals available', dim:true}]};
+    }
+    case 'decalsmanage': return {title:'Decals', items: extDecals.length ? extDecals.map(d=>({
+      lab:d.name, val: d.hidden?'Hidden':'Shown', arrow:true, go:{type:'decalview', decalId:d.id, sel:0, top:0}
+    })) : [{lab:'No decals installed', dim:true}]};
+    case 'decalview': {
+      const d = extDecals.find(x=>x.id===sc.decalId);
+      return {title: d?d.name:'Decal', items:[
+        {lab: d&&d.hidden ? 'Show' : 'Hide', act(){ toggleDecalHidden(sc.decalId); render(); }},
+        {lab:'Remove', danger:true, act(){ removeDecal(sc.decalId); back(); }},
+      ]};
     }
     case 'extappview': {
       const a = extApps.find(x=>x.id===sc.extId);
