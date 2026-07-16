@@ -632,6 +632,22 @@ function uninstallExt(id){
   if(i>=0){ if(extApps[i]._blobUrl){ try{ URL.revokeObjectURL(extApps[i]._blobUrl); }catch(e){} } extApps.splice(i,1); }
   dbDelete('extapps', id);
 }
+// read-only bridge: a running extension app can ask (via postMessage) for the song
+// list and usage stats. No write access — an app can't touch the library, playback,
+// or settings this way, only read a snapshot of them.
+window.addEventListener('message', (ev)=>{
+  const ifr = document.getElementById('extframe');
+  if(!ifr || ev.source !== ifr.contentWindow) return;
+  const msg = ev.data;
+  if(!msg || typeof msg!=='object' || msg.channel!=='hplay') return;
+  if(msg.type==='getLibrary'){
+    const data = lib.map(s=>({ title:dispTitle(s.title), artist:s.artist, album:s.album }));
+    ifr.contentWindow.postMessage({channel:'hplay', type:'library', data}, '*');
+  } else if(msg.type==='getStats'){
+    const data = Object.assign({}, appStats, { songCount: lib.length });
+    ifr.contentWindow.postMessage({channel:'hplay', type:'stats', data}, '*');
+  }
+});
 /* ---------- Extras: Music Quiz ---------- */
 let quiz = null;
 let quizNextTimer = 0;
