@@ -191,6 +191,11 @@
   .meta .t { font-size:calc(var(--su)*12.5); font-weight:800; margin-bottom:calc(var(--su)*4); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
   .meta .a, .meta .al { font-size:calc(var(--su)*10); font-weight:500; color:#2a2d33; margin-bottom:calc(var(--su)*2.8); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
   .meta .cnt { font-size:calc(var(--su)*9); color:#33363c; margin-top:calc(var(--su)*8); font-weight:600; }
+  .np .mid.lyr { display:block; overflow:hidden; }
+  .lyrics { height:100%; overflow-y:auto; scroll-behavior:smooth; padding:0 calc(var(--su)*3); }
+  .lyrics .lline { font-size:calc(var(--su)*10.5); font-weight:600; color:#9a9ea6; padding:calc(var(--su)*3.2) 0; line-height:1.35; transition:color .2s, font-weight .2s; }
+  .lyrics .lline.cur { color:#15181d; font-weight:800; }
+  .lyrics.plain .lline { color:#33363c; font-weight:500; }
   .np .bot { flex:0 0 auto; display:flex; align-items:center; gap:calc(var(--su)*5); font-size:calc(var(--su)*9.5); font-weight:700; color:#26292f; font-variant-numeric:tabular-nums; }
   .track {
     flex:1; height:calc(var(--su)*7.5);
@@ -292,6 +297,9 @@
   body.darkui .pane { background:linear-gradient(180deg,#181b21,#101318); border-left-color:#05060a; }
   body.darkui .pane .logo { color:#3c424c; }
   body.darkui .meta .a, body.darkui .meta .al { color:#aeb6c0; }
+  body.darkui .lyrics .lline { color:#5c636d; }
+  body.darkui .lyrics .lline.cur { color:#e8ebf0; }
+  body.darkui .lyrics.plain .lline { color:#aeb6c0; }
   body.darkui .meta .cnt { color:#8a93a0; }
   body.darkui .np .bot { color:#c6ccd4; }
   body.darkui .track { background:#23272e; border-color:#0a0c10; }
@@ -751,7 +759,7 @@ function removeSong(id){
 function saveSong(s){
   if(!s._blob) return;
   dbPut('songs', { id:s.id, blob:s._blob, title:s.title, artist:s.artist, album:s.album,
-                   artBlob:s._artBlob || null });
+                   artBlob:s._artBlob || null, sylt:s.sylt||null, lyricsText:s.lyricsText||'' });
 }
 function saveSettings(){
   dbPut('kv', { shuffle:settings.shuffle, repeat:settings.repeat, clicker:settings.clicker,
@@ -813,7 +821,8 @@ async function restore(){
     lib.push({ id:r.id, file:null, _tagged:true, _blob:r.blob, _artBlob:r.artBlob||null,
                url:URL.createObjectURL(r.blob),
                title:r.title, artist:r.artist, album:r.album,
-               art: r.artBlob ? URL.createObjectURL(r.artBlob) : null });
+               art: r.artBlob ? URL.createObjectURL(r.artBlob) : null,
+               sylt: r.sylt||null, lyricsText: r.lyricsText||'' });
     nextId = Math.max(nextId, r.id+1);
   }
   if(rows.length){ lib.sort((a,b)=>a.title.localeCompare(b.title)); }
@@ -845,12 +854,25 @@ const AUDIO_RE = /\.(mp3|m4a|flac|ogg|wav|opus|aac)$/i;
 const MEDIA_RE = AUDIO_RE;
 const NATIVE = (typeof Android !== 'undefined' && typeof Android.pickFolder === 'function');
 
+// pulls lyrics out of a jsmediatags tag map: SYLT (timestamped) if present, else plain USLT text
+function extractLyrics(t){
+  let sylt = null, lyricsText = '';
+  if(t.SYLT && Array.isArray(t.SYLT.synchronisedText)){
+    sylt = t.SYLT.synchronisedText
+      .map(e=>({ t:Number(e.timeStamp)||0, text:String(e.text||'').trim() }))
+      .filter(e=>e.text)
+      .sort((a,b)=>a.t-b.t);
+    if(!sylt.length) sylt = null;
+  }
+  if(t.lyrics && t.lyrics.lyrics) lyricsText = String(t.lyrics.lyrics).trim();
+  return { sylt, lyricsText };
+}
 function readTags(f){
   return new Promise(res=>{
     let title = f.name.replace(/\.[^.]+$/,''), artist='Unknown Artist', album='Unknown Album';
     const m = title.match(/^(.+?)\s*[-\u2013]\s*(.+)$/);
     if(m){ artist=m[1].trim(); title=m[2].trim(); }
-    const base = { title, artist, album, artBlob:null };
+    const base = { title, artist, album, artBlob:null, sylt:null, lyricsText:'' };
     if(!window.jsmediatags) return res(base);
     try{
       window.jsmediatags.read(f, {
@@ -860,6 +882,8 @@ function readTags(f){
           if(t.artist) base.artist = String(t.artist).trim() || base.artist;
           if(t.album)  base.album  = String(t.album).trim()  || base.album;
           if(t.picture){ try{ base.artBlob = new Blob([new Uint8Array(t.picture.data)], {type:t.picture.format}); }catch(e){} }
+          const lyr = extractLyrics(t);
+          base.sylt = lyr.sylt; base.lyricsText = lyr.lyricsText;
           res(base);
         },
         onError(){ res(base); }
@@ -912,7 +936,8 @@ async function scanFolder(){
                  url:URL.createObjectURL(f),
                  title:meta.title, artist:meta.artist,
                  album: folderAlbum || meta.album,
-                 art: meta.artBlob ? URL.createObjectURL(meta.artBlob) : null });
+                 art: meta.artBlob ? URL.createObjectURL(meta.artBlob) : null,
+                 sylt: meta.sylt||null, lyricsText: meta.lyricsText||'' });
       if(++n % 6 === 0){ lib.sort((a,b)=>a.title.localeCompare(b.title)); render(); }
     }
     lib.sort((a,b)=>a.title.localeCompare(b.title));
@@ -959,6 +984,8 @@ async function tagNativeEntries(entries){
               if(t.artist) out.artist = String(t.artist).trim();
               if(t.album)  out.album  = String(t.album).trim();
               if(t.picture){ try{ out.artBlob = new Blob([new Uint8Array(t.picture.data)], {type:t.picture.format}); }catch(e){} }
+              const lyr = extractLyrics(t);
+              out.sylt = lyr.sylt; out.lyricsText = lyr.lyricsText;
               res(out);
             },
             onError(){ res(null); }
@@ -972,6 +999,8 @@ async function tagNativeEntries(entries){
       if(meta.artist) entry.artist = meta.artist;
       if(meta.album)  entry.album  = meta.album;
       if(meta.artBlob){ try{ entry.art = URL.createObjectURL(meta.artBlob); }catch(e){} }
+      if(meta.sylt)   entry.sylt   = meta.sylt;
+      if(meta.lyricsText) entry.lyricsText = meta.lyricsText;
     }
     entry._tagged = true;
     if(++n % 6 === 0){ lib.sort((a,b)=>a.title.localeCompare(b.title)); render(); }
@@ -1014,6 +1043,8 @@ function addFiles(files){
               entry.art = URL.createObjectURL(b);
             }catch(e){}
           }
+          const lyr = extractLyrics(t);
+          entry.sylt = lyr.sylt; entry.lyricsText = lyr.lyricsText;
           saveSong(entry);
           if(++i % 4 === 0){ lib.sort((a,b)=>a.title.localeCompare(b.title)); render(); }
           next();
@@ -1427,6 +1458,17 @@ function nowlineHTML(){
   return `<div class="nowline"><span class="pi">${audio.paused?'\u2016':'\u25b6'}</span>${esc(dispTitle(s.title))} \u2014 ${esc(s.artist)}</div>`;
 }
 function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function lyricsHTML(s){
+  if(s.sylt && s.sylt.length){
+    const posMs = (audio.currentTime||0)*1000;
+    let curIdx = -1;
+    for(let i=0;i<s.sylt.length;i++){ if(s.sylt[i].t<=posMs) curIdx=i; else break; }
+    const rows = s.sylt.map((ln,i)=>`<div class="lline ${i===curIdx?'cur':''}">${esc(ln.text)}</div>`).join('');
+    return `<div class="lyrics">${rows}</div>`;
+  }
+  const lines = String(s.lyricsText||'').split('\n').map(l=>`<div class="lline">${esc(l)}</div>`).join('');
+  return `<div class="lyrics plain">${lines}</div>`;
+}
 function dispTitle(s){ return String(s==null?'':s).replace(/\s*[\(\[][^\(\)\[\]]*[\)\]]/g, '').replace(/\s{2,}/g,' ').trim(); }
 
 const VISIBLE = 12;
@@ -1453,20 +1495,26 @@ function render(){
         <div class="track ${npMode===1?'scrub':''}"><div class="prog" style="width:${pct}%"></div><div class="dia" style="left:${pct}%"></div></div>
         <span>-${fmt((audio.duration||0)-audio.currentTime)}</span>`;
     }
-    html += `<div class="content"><div class="np">
-      ${settings.shuffle?`<div class="shuf">${shufSVG}</div>`:''}
-      <div class="mid">${art}
+    const hasLyrics = !!(s.sylt || s.lyricsText);
+    const showLyrics = npMode===2 && hasLyrics;
+    const mid = showLyrics ? lyricsHTML(s) : `${art}
         <div class="meta">
           <div class="t">${esc(dispTitle(s.title))}</div>
           <div class="a">${esc(s.artist)}</div>
           <div class="al">${esc(s.album)}</div>
-          <div class="cnt">${playlistLabel?esc(playlistLabel)+' · ':''}${pIdx+1} of ${total}</div>
-        </div>
-      </div>
+          <div class="cnt">${playlistLabel?esc(playlistLabel)+' · ':''}${pIdx+1} of ${total}${hasLyrics?' · Lyrics ⏵':''}</div>
+        </div>`;
+    html += `<div class="content"><div class="np">
+      ${settings.shuffle?`<div class="shuf">${shufSVG}</div>`:''}
+      <div class="mid${showLyrics?' lyr':''}">${mid}</div>
       <div class="bot">${bottom}</div>
     </div></div>`;
     html += nowlineHTML();
     $screen.innerHTML = html;
+    if(showLyrics){
+      const curLine = $screen.querySelector('.lline.cur');
+      if(curLine) curLine.scrollIntoView({block:'center'});
+    }
     return;
   }
 
@@ -1598,6 +1646,7 @@ function render(){
 
 setInterval(()=>{ render(); }, 60000);
 setInterval(()=>{ if(cur().type==='np' && !showVol) render(); }, 1000);
+setInterval(()=>{ if(cur().type==='np' && npMode===2) render(); }, 400);
 setInterval(()=>{ if(cur().type==='sleeptimer' && (sleepUntil||stopAfterTrack)) render(); }, 1000);
 setInterval(()=>{ if(cur().type==='clock') render(); }, 1000);
 setInterval(()=>{ if(cur().type==='stopwatch' && swRunning) render(); }, 200);
@@ -1642,7 +1691,12 @@ function scroll(dir, mult){
 function select(){
   ensureAC(); clickSound('select');
   const sc = cur();
-  if(sc.type==='np'){ npMode = npMode?0:1; render(); return; }
+  if(sc.type==='np'){
+    const s = nowSong();
+    const hasLyrics = s && (s.sylt || s.lyricsText);
+    npMode = npMode===0 ? 1 : (npMode===1 && hasLyrics ? 2 : 0);
+    render(); return;
+  }
   if(sc.type==='confirmdel'){ (sc.sel===1?delYes:delNo)(); return; }
   if(sc.type==='quiz'){ quizAnswer(); return; }
   const def = screenDef(sc);
