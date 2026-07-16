@@ -360,15 +360,33 @@
   .hidden{ display:none !important; }
   .decalLayer{ position:absolute; inset:0; z-index:1; pointer-events:none; overflow:hidden; }
   .decalLayer img{ position:absolute; filter:drop-shadow(0 .3vh .8vh rgba(0,0,0,.35)); }
+  .decalLayer.arranging{ pointer-events:auto; }
+  .decalLayer.arranging img{
+    cursor:grab; touch-action:none;
+    outline:1.5px dashed rgba(255,255,255,.75); outline-offset:4px;
+  }
+  .decalLayer.arranging img.dragging{
+    cursor:grabbing; filter:brightness(1.1) drop-shadow(0 .6vh 1.4vh rgba(0,0,0,.5));
+  }
+  .arrangeBar{
+    position:fixed; left:0; right:0; bottom:0; z-index:30;
+    display:flex; justify-content:center;
+    padding:14px 0 calc(14px + env(safe-area-inset-bottom));
+  }
+  .arrangeBar button{
+    background:#0f4fa8; color:#fff; font-weight:700; font-size:15px;
+    padding:11px 30px; border:none; border-radius:999px; box-shadow:0 4px 14px rgba(0,0,0,.35);
+  }
   .engraving{
-    flex:0 0 auto; text-align:center; padding:0 8vw; max-width:84vw;
-    font-family:'Snell Roundhand','Brush Script MT',cursive;
-    font-style:italic; font-size:min(4.4vw, 2.2dvh); letter-spacing:.02em;
-    color:rgba(255,255,255,.52);
-    text-shadow:0 -1px 1px rgba(0,10,40,.55), 0 1px 0 rgba(255,255,255,.2);
+    position:absolute; left:50%; top:0; transform:translate(-50%,-50%);
+    text-align:center; padding:0 8vw; max-width:84vw;
+    font-family:inherit; font-style:italic; font-weight:500;
+    font-size:min(3.6vw, 1.8dvh); letter-spacing:.03em;
+    color:rgba(255,255,255,.5);
+    text-shadow:0 -1px 1px rgba(0,10,40,.5), 0 1px 0 rgba(255,255,255,.18);
     overflow:hidden; white-space:nowrap; text-overflow:ellipsis; z-index:2; pointer-events:none;
   }
-  body.darkui .engraving{ color:rgba(255,255,255,.4); }
+  body.darkui .engraving{ color:rgba(255,255,255,.38); }
 
   /* ============ BOOT SCREEN ============ */
   .bootscreen{
@@ -455,6 +473,15 @@ const audio   = document.getElementById('audio');
 function setUnits(){
   const h = $screen.clientHeight || 1;
   document.documentElement.style.setProperty('--su', (h/240)+'px');
+  positionEngraving();
+}
+function positionEngraving(){
+  const el = document.getElementById('engraving');
+  const bezel = document.querySelector('.bezel');
+  if(!el || !bezel || !$wheel) return;
+  const bRect = bezel.getBoundingClientRect();
+  const wRect = $wheel.getBoundingClientRect();
+  el.style.top = ((bRect.bottom + wRect.top) / 2) + 'px';
 }
 new ResizeObserver(setUnits).observe($screen);
 setUnits();
@@ -640,8 +667,100 @@ function decalKey(item){ return 'decal:'+(item.id||item.file); }
 function renderDecalLayer(){
   const el = document.getElementById('decalLayer'); if(!el) return;
   el.innerHTML = extDecals.filter(d=>!d.hidden).map(d=>
-    `<img src="${d.url}" style="left:${d.x}%;top:${d.y}%;width:${d.w}vw;transform:translate(-50%,-50%) rotate(${d.rot}deg);">`
+    `<img data-id="${d.id}" src="${d.url}" style="left:${d.x}%;top:${d.y}%;width:${d.w}vw;transform:translate(-50%,-50%) rotate(${d.rot}deg);">`
   ).join('');
+  if(arranging) el.querySelectorAll('img').forEach(img=>img.addEventListener('pointerdown', onDecalPointerDown));
+}
+
+/* ---------- arranging decals: drag to move, pinch to resize+rotate, right on the device body ---------- */
+let arranging = false;
+const decalPointers = new Map(); // pointerId -> {x, y, img, id}
+let activeDecalDrag = null;
+function enterArrangeMode(){
+  if(!extDecals.length){ toast('No decals to arrange'); return; }
+  arranging = true;
+  document.getElementById('decalLayer').classList.add('arranging');
+  let bar = document.getElementById('arrangeBar');
+  if(!bar){
+    bar = document.createElement('div');
+    bar.id = 'arrangeBar'; bar.className = 'arrangeBar';
+    bar.innerHTML = '<button type="button">Done Arranging</button>';
+    bar.querySelector('button').addEventListener('click', exitArrangeMode);
+    document.body.appendChild(bar);
+  }
+  bar.classList.remove('hidden');
+  renderDecalLayer();
+}
+function exitArrangeMode(){
+  arranging = false;
+  decalPointers.clear(); activeDecalDrag = null;
+  document.getElementById('decalLayer').classList.remove('arranging');
+  const bar = document.getElementById('arrangeBar'); if(bar) bar.classList.add('hidden');
+  renderDecalLayer();
+}
+function applyDecalTransform(d){
+  const img = document.querySelector('.decalLayer img[data-id="'+CSS.escape(d.id)+'"]');
+  if(!img) return;
+  img.style.left = d.x+'%'; img.style.top = d.y+'%'; img.style.width = d.w+'vw';
+  img.style.transform = 'translate(-50%,-50%) rotate('+d.rot+'deg)';
+}
+function onDecalPointerDown(e){
+  if(!arranging) return;
+  e.stopPropagation();
+  const img = e.currentTarget, id = img.dataset.id;
+  try{ img.setPointerCapture(e.pointerId); }catch(err){}
+  decalPointers.set(e.pointerId, {x:e.clientX, y:e.clientY, img, id});
+  img.classList.add('dragging');
+  const d = extDecals.find(x=>x.id===id); if(!d) return;
+  const forThis = [...decalPointers.values()].filter(p=>p.id===id);
+  if(forThis.length>=2){
+    const [a,b] = forThis;
+    activeDecalDrag = { id, mode:'pinch',
+      startDist: Math.hypot(b.x-a.x, b.y-a.y),
+      startAngle: Math.atan2(b.y-a.y, b.x-a.x),
+      startW: d.w, startRot: d.rot };
+  } else {
+    activeDecalDrag = { id, mode:'drag', lastX:e.clientX, lastY:e.clientY };
+  }
+  img.addEventListener('pointermove', onDecalPointerMove);
+  img.addEventListener('pointerup', onDecalPointerUp);
+  img.addEventListener('pointercancel', onDecalPointerUp);
+}
+function onDecalPointerMove(e){
+  if(!activeDecalDrag) return;
+  const p = decalPointers.get(e.pointerId); if(!p) return;
+  p.x = e.clientX; p.y = e.clientY;
+  const d = extDecals.find(x=>x.id===activeDecalDrag.id); if(!d) return;
+  const ipodRect = document.getElementById('ipod').getBoundingClientRect();
+  if(activeDecalDrag.mode==='drag'){
+    const dx = e.clientX - activeDecalDrag.lastX, dy = e.clientY - activeDecalDrag.lastY;
+    activeDecalDrag.lastX = e.clientX; activeDecalDrag.lastY = e.clientY;
+    d.x = clampNum(d.x + dx/ipodRect.width*100, 0, 100, d.x);
+    d.y = clampNum(d.y + dy/ipodRect.height*100, 0, 100, d.y);
+  } else {
+    const forThis = [...decalPointers.values()].filter(pp=>pp.id===activeDecalDrag.id);
+    if(forThis.length<2) return;
+    const [a,b] = forThis;
+    const dist = Math.hypot(b.x-a.x, b.y-a.y);
+    const angle = Math.atan2(b.y-a.y, b.x-a.x);
+    d.w = clampNum(activeDecalDrag.startW * (dist/(activeDecalDrag.startDist||1)), 4, 40, d.w);
+    d.rot = clampNum(activeDecalDrag.startRot + (angle-activeDecalDrag.startAngle)*180/Math.PI, -180, 180, d.rot);
+  }
+  applyDecalTransform(d);
+}
+function onDecalPointerUp(e){
+  const p = decalPointers.get(e.pointerId);
+  decalPointers.delete(e.pointerId);
+  if(p && p.img){ p.img.classList.remove('dragging'); try{ p.img.releasePointerCapture(e.pointerId); }catch(err){} }
+  if(!activeDecalDrag) return;
+  const remaining = [...decalPointers.values()].filter(pp=>pp.id===activeDecalDrag.id);
+  const d = extDecals.find(x=>x.id===activeDecalDrag.id);
+  if(remaining.length===0){
+    if(d) dbPut('extdecals', { id:d.id, name:d.name, blob:d.blob, x:d.x, y:d.y, w:d.w, rot:d.rot, hidden:d.hidden });
+    activeDecalDrag = null;
+  } else if(remaining.length===1 && d){
+    activeDecalDrag = { id:activeDecalDrag.id, mode:'drag', lastX:remaining[0].x, lastY:remaining[0].y };
+  }
 }
 async function installDecal(item){
   if(!item || typeof item.file!=='string'){ toast('Invalid decal'); return; }
@@ -1325,6 +1444,7 @@ function updateEngraving(){
   const txt = (custom.engraving||'').trim();
   el.textContent = txt;
   el.classList.toggle('hidden', !txt);
+  positionEngraving();
 }
 
 /* ---------- fullscreen: any tap pushes the phone into Hplay mode ---------- */
@@ -1498,9 +1618,12 @@ function screenDef(sc){
         act(){ installDecal(d); }
       })) : [{lab:'No decals available', dim:true}]};
     }
-    case 'decalsmanage': return {title:'Decals', items: extDecals.length ? extDecals.map(d=>({
-      lab:d.name, val: d.hidden?'Hidden':'Shown', arrow:true, go:{type:'decalview', decalId:d.id, sel:0, top:0}
-    })) : [{lab:'No decals installed', dim:true}]};
+    case 'decalsmanage': return {title:'Decals', items: extDecals.length ? [
+      {lab:'Arrange on Screen', act(){ enterArrangeMode(); }},
+      ...extDecals.map(d=>({
+        lab:d.name, val: d.hidden?'Hidden':'Shown', arrow:true, go:{type:'decalview', decalId:d.id, sel:0, top:0}
+      })),
+    ] : [{lab:'No decals installed', dim:true}]};
     case 'decalview': {
       const d = extDecals.find(x=>x.id===sc.decalId);
       return {title: d?d.name:'Decal', items:[
