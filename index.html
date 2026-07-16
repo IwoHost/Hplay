@@ -552,6 +552,79 @@ function removeNote(id){
   dbDelete('notes', id);
 }
 
+/* ---------- Extras: Marketplace (downloadable extension apps + music) ---------- */
+// installed extension "apps": { id, name, desc, html }, loaded from IDB store 'extapps'
+let extApps = [];
+// transient browse state for the store screens; null = not loaded yet, [] = loaded empty
+const market = { apps:null, music:null, appsErr:null, musicErr:null };
+function marketBase(){ return String(custom.marketUrl||'').replace(/\/+$/,''); }
+function resolveUrl(path){
+  if(/^https?:\/\//i.test(path)) return path;
+  return marketBase() + '/' + String(path).replace(/^\/+/,'');
+}
+async function loadManifest(){
+  const base = marketBase();
+  if(!base) throw new Error('No marketplace URL set');
+  const res = await fetch(base+'/manifest.json', {cache:'no-store'});
+  if(!res.ok) throw new Error('HTTP '+res.status);
+  return res.json();
+}
+function setMarketUrl(){
+  const u = prompt('Marketplace URL', custom.marketUrl || 'https://');
+  if(u!=null){ custom.marketUrl = u.trim(); saveSettings(); market.apps=market.music=null; market.appsErr=market.musicErr=null; render(); }
+}
+function openStoreApps(){
+  stack.push({type:'storeapps', sel:0, top:0});
+  market.apps = null; market.appsErr = null; render();
+  loadManifest().then(m=>{ market.apps = (m&&m.apps)||[]; render(); })
+                 .catch(e=>{ market.appsErr = String(e&&e.message||e); render(); });
+}
+function openStoreMusic(){
+  stack.push({type:'storemusic', sel:0, top:0});
+  market.music = null; market.musicErr = null; render();
+  loadManifest().then(m=>{ market.music = (m&&m.music)||[]; render(); })
+                 .catch(e=>{ market.musicErr = String(e&&e.message||e); render(); });
+}
+function extAppKey(item){ return 'ext:'+(item.id||item.file); }
+async function installExtApp(item){
+  const key = extAppKey(item);
+  try{
+    toast('Downloading '+(item.name||'app')+'…');
+    const res = await fetch(resolveUrl(item.file), {cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const html = await res.text();
+    const rec = { id:key, name:item.name||item.id||'App', desc:item.desc||'', html };
+    const i = extApps.findIndex(x=>x.id===key);
+    if(i>=0){ if(extApps[i]._blobUrl){ try{ URL.revokeObjectURL(extApps[i]._blobUrl); }catch(e){} } extApps[i]=rec; }
+    else extApps.push(rec);
+    dbPut('extapps', rec);
+    toast('Installed '+rec.name);
+    render();
+  }catch(e){ toast('Install failed'); }
+}
+function uninstallExt(id){
+  const i = extApps.findIndex(x=>x.id===id);
+  if(i>=0){ if(extApps[i]._blobUrl){ try{ URL.revokeObjectURL(extApps[i]._blobUrl); }catch(e){} } extApps.splice(i,1); }
+  dbDelete('extapps', id);
+}
+async function installStoreSong(item){
+  try{
+    toast('Downloading '+(item.title||'song')+'…');
+    const res = await fetch(resolveUrl(item.file), {cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const blob = await res.blob();
+    const entry = { id:nextId++, file:null, _tagged:true, _blob:blob, src:'store',
+                    url:URL.createObjectURL(blob),
+                    title:item.title||'Unknown Title', artist:item.artist||'Unknown Artist',
+                    album:item.album||'Unknown Album', art:null };
+    lib.push(entry);
+    lib.sort((a,b)=>a.title.localeCompare(b.title));
+    saveSong(entry);
+    toast('Added '+dispTitle(entry.title));
+    render();
+  }catch(e){ toast('Download failed'); }
+}
+
 /* ---------- Extras: Music Quiz ---------- */
 let quiz = null;
 let quizNextTimer = 0;
@@ -611,13 +684,14 @@ function idb(){
     let settled = false;
     const done = (val)=>{ if(settled) return; settled = true; res(val); };
     try{
-      const rq = indexedDB.open('hplay', 3);
+      const rq = indexedDB.open('hplay', 4);
       rq.onupgradeneeded = ()=>{
         const d = rq.result;
         if(!d.objectStoreNames.contains('songs')) d.createObjectStore('songs', {keyPath:'id'});
         if(!d.objectStoreNames.contains('kv'))    d.createObjectStore('kv');
         if(!d.objectStoreNames.contains('tags'))  d.createObjectStore('tags');
         if(!d.objectStoreNames.contains('notes')) d.createObjectStore('notes', {keyPath:'id'});
+        if(!d.objectStoreNames.contains('extapps')) d.createObjectStore('extapps', {keyPath:'id'});
       };
       rq.onsuccess = ()=>{
         db = rq.result;
@@ -683,16 +757,20 @@ function saveSettings(){
   dbPut('kv', { shuffle:settings.shuffle, repeat:settings.repeat, clicker:settings.clicker,
                 theme:themeName, wheel:wheelName, volume:audio.volume,
                 dark:custom.dark, wheelSize:custom.wheelSize, sway:custom.sway, devName:custom.devName,
+                marketUrl:custom.marketUrl,
                 sleepEnd:sleepEndMode, fadeSec:fadeSec }, 'settings');
 }
 async function eraseAll(){
-  await dbClear('songs'); await dbClear('kv'); await dbClear('tags');
+  await dbClear('songs'); await dbClear('kv'); await dbClear('tags'); await dbClear('extapps');
   dirHandle = null; folderNeedsTap = false; excluded.clear();
   lib.length = 0; playlist = []; pIdx = -1;
   audio.pause(); audio.removeAttribute('src');
+  extApps.forEach(a=>{ if(a._blobUrl){ try{ URL.revokeObjectURL(a._blobUrl); }catch(e){} } });
+  extApps.length = 0;
+  market.apps = market.music = null; market.appsErr = market.musicErr = null;
   stack.length = 1; stack[0] = {type:'main', sel:0, top:0};
   applyTheme('Blue'); applyWheelColor('Match');
-  custom.dark=false; custom.wheelSize='Normal'; custom.sway=true; custom.devName='Hplay';
+  custom.dark=false; custom.wheelSize='Normal'; custom.sway=true; custom.devName='Hplay'; custom.marketUrl='';
   applyCustom();
   settings.shuffle=false; settings.repeat='Off'; settings.clicker=true;
   appStats = { opens:0, playCount:0, playMs:0, quizAnswered:0, quizCorrect:0, quizBest:0, songPlays:{} };
@@ -714,8 +792,10 @@ async function restore(){
     if(s.wheelSize && WHEEL_SIZES[s.wheelSize]) custom.wheelSize = s.wheelSize;
     if(typeof s.sway==='boolean') custom.sway = s.sway;
     if(s.devName) custom.devName = String(s.devName).slice(0,20);
+    if(typeof s.marketUrl==='string') custom.marketUrl = s.marketUrl;
     applyCustom();
   }
+  try{ extApps = await dbAll('extapps'); }catch(e){ extApps = []; }
   try{
     const st = await dbGet('kv','appStats');
     appStats = Object.assign({ opens:0, playCount:0, playMs:0, quizAnswered:0, quizCorrect:0, quizBest:0, songPlays:{} }, st||{});
@@ -1082,7 +1162,7 @@ const THEMES = {
 };
 let themeName = 'Blue';          // body color
 let wheelName = 'Match';         // wheel color ('Match' = follow body)
-const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay' };
+const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay', marketUrl:'' };
 const WHEEL_SIZES = { Small:['56vw','46dvh'], Normal:['64vw','52dvh'], Big:['74vw','60dvh'] };
 function applyColors(){
   const b = THEMES[themeName]; if(!b) return;
@@ -1230,7 +1310,48 @@ function screenDef(sc){
       {lab:'Music Quiz', arrow:true, act(){ quiz = null; stack.push({type:'quiz'}); startQuizQuestion(); }},
       {lab:'Notes', arrow:true, go:{type:'notes', sel:0, top:0}},
       {lab:'Statistics', arrow:true, go:{type:'stats'}},
+      ...extApps.map(a=>({lab:a.name, arrow:true, go:{type:'extappview', extId:a.id, sel:0, top:0}})),
+      {lab:'Get More…', arrow:true, go:{type:'store', sel:0, top:0}},
     ]};
+    case 'store': return {title:'Get More', items:[
+      {lab:'Browse Apps', arrow:true, act(){ openStoreApps(); }},
+      {lab:'Browse Music', arrow:true, act(){ openStoreMusic(); }},
+      {lab:'Marketplace URL…', val: custom.marketUrl||'Not set', act(){ setMarketUrl(); }},
+    ]};
+    case 'storeapps': {
+      if(!custom.marketUrl) return {title:'Browse Apps', items:[
+        {lab:'Set a Marketplace URL first', dim:true},
+        {lab:'Marketplace URL…', act(){ setMarketUrl(); }},
+      ]};
+      if(market.appsErr) return {title:'Browse Apps', items:[{lab:'Couldn’t load: '+market.appsErr, dim:true}]};
+      if(market.apps===null) return {title:'Browse Apps', items:[{lab:'Loading…', dim:true}]};
+      return {title:'Browse Apps', items: market.apps.length ? market.apps.map(a=>({
+        lab:a.name||a.id, val: extApps.some(x=>x.id===extAppKey(a)) ? 'Installed':'Install',
+        act(){ installExtApp(a); }
+      })) : [{lab:'No apps available', dim:true}]};
+    }
+    case 'storemusic': {
+      if(!custom.marketUrl) return {title:'Browse Music', items:[
+        {lab:'Set a Marketplace URL first', dim:true},
+        {lab:'Marketplace URL…', act(){ setMarketUrl(); }},
+      ]};
+      if(market.musicErr) return {title:'Browse Music', items:[{lab:'Couldn’t load: '+market.musicErr, dim:true}]};
+      if(market.music===null) return {title:'Browse Music', items:[{lab:'Loading…', dim:true}]};
+      return {title:'Browse Music', items: market.music.length ? market.music.map(s=>({
+        lab:s.title||s.id, val:'Download', act(){ installStoreSong(s); }
+      })) : [{lab:'No music available', dim:true}]};
+    }
+    case 'extappview': {
+      const a = extApps.find(x=>x.id===sc.extId);
+      return {title: a?a.name:'App', items:[
+        {lab:'Open', act(){ stack.push({type:'extapp', extId:sc.extId}); render(); }},
+        {lab:'Uninstall', danger:true, act(){ uninstallExt(sc.extId); back(); }},
+      ]};
+    }
+    case 'extapp': {
+      const a = extApps.find(x=>x.id===sc.extId);
+      return {title: a?a.name:'App', extapp:true, extId:sc.extId};
+    }
     case 'quiz': return {title:'Music Quiz', quiz:true};
     case 'clock': return {title:'Clock', clock:true};
     case 'stopwatch': {
@@ -1388,6 +1509,18 @@ function render(){
     </div></div>`;
     html += nowlineHTML();
     $screen.innerHTML = html;
+    return;
+  }
+  if(def.extapp){
+    const a = extApps.find(x=>x.id===def.extId);
+    if(!a){ stack.pop(); render(); return; }
+    html += `<div class="content" style="display:block; padding:0;"><iframe id="extframe" class="extframe" sandbox="allow-scripts allow-forms allow-pointer-lock" style="width:100%;height:100%;border:0;background:#fff;"></iframe></div>`;
+    $screen.innerHTML = html;
+    const ifr = document.getElementById('extframe');
+    if(ifr){
+      if(!a._blobUrl) a._blobUrl = URL.createObjectURL(new Blob([a.html], {type:'text/html'}));
+      ifr.src = a._blobUrl;
+    }
     return;
   }
   if(def.quiz){
