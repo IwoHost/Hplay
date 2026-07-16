@@ -560,11 +560,11 @@ function removeNote(id){
   dbDelete('notes', id);
 }
 
-/* ---------- Extras: Marketplace (downloadable extension apps + music) ---------- */
+/* ---------- Extras: Marketplace (downloadable extension apps + themes) ---------- */
 // installed extension "apps": { id, name, desc, html }, loaded from IDB store 'extapps'
 let extApps = [];
 // transient browse state for the store screens; null = not loaded yet, [] = loaded empty
-const market = { apps:null, music:null, themes:null, appsErr:null, musicErr:null, themesErr:null };
+const market = { apps:null, themes:null, appsErr:null, themesErr:null };
 function marketBase(){ return String(custom.marketUrl||'').replace(/\/+$/,''); }
 function resolveUrl(path){
   if(/^https?:\/\//i.test(path)) return path;
@@ -579,19 +579,13 @@ async function loadManifest(){
 }
 function setMarketUrl(){
   const u = prompt('Marketplace URL', custom.marketUrl || 'https://');
-  if(u!=null){ custom.marketUrl = u.trim(); saveSettings(); market.apps=market.music=market.themes=null; market.appsErr=market.musicErr=market.themesErr=null; render(); }
+  if(u!=null){ custom.marketUrl = u.trim(); saveSettings(); market.apps=market.themes=null; market.appsErr=market.themesErr=null; render(); }
 }
 function openStoreApps(){
   stack.push({type:'storeapps', sel:0, top:0});
   market.apps = null; market.appsErr = null; render();
   loadManifest().then(m=>{ market.apps = (m&&m.apps)||[]; render(); })
                  .catch(e=>{ market.appsErr = String(e&&e.message||e); render(); });
-}
-function openStoreMusic(){
-  stack.push({type:'storemusic', sel:0, top:0});
-  market.music = null; market.musicErr = null; render();
-  loadManifest().then(m=>{ market.music = (m&&m.music)||[]; render(); })
-                 .catch(e=>{ market.musicErr = String(e&&e.message||e); render(); });
 }
 function openStoreThemes(){
   stack.push({type:'storethemes', sel:0, top:0});
@@ -638,24 +632,6 @@ function uninstallExt(id){
   if(i>=0){ if(extApps[i]._blobUrl){ try{ URL.revokeObjectURL(extApps[i]._blobUrl); }catch(e){} } extApps.splice(i,1); }
   dbDelete('extapps', id);
 }
-async function installStoreSong(item){
-  try{
-    toast('Downloading '+(item.title||'song')+'…');
-    const res = await fetch(resolveUrl(item.file), {cache:'no-store'});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const blob = await res.blob();
-    const entry = { id:nextId++, file:null, _tagged:true, _blob:blob, src:'store',
-                    url:URL.createObjectURL(blob),
-                    title:item.title||'Unknown Title', artist:item.artist||'Unknown Artist',
-                    album:item.album||'Unknown Album', art:null };
-    lib.push(entry);
-    lib.sort((a,b)=>a.title.localeCompare(b.title));
-    saveSong(entry);
-    toast('Added '+dispTitle(entry.title));
-    render();
-  }catch(e){ toast('Download failed'); }
-}
-
 /* ---------- Extras: Music Quiz ---------- */
 let quiz = null;
 let quizNextTimer = 0;
@@ -800,7 +776,7 @@ async function eraseAll(){
   extApps.forEach(a=>{ if(a._blobUrl){ try{ URL.revokeObjectURL(a._blobUrl); }catch(e){} } });
   extApps.length = 0;
   extThemes.length = 0;
-  market.apps = market.music = market.themes = null; market.appsErr = market.musicErr = market.themesErr = null;
+  market.apps = market.themes = null; market.appsErr = market.themesErr = null;
   stack.length = 1; stack[0] = {type:'main', sel:0, top:0};
   applyTheme('Blue'); applyWheelColor('Match');
   custom.dark=false; custom.wheelSize='Normal'; custom.sway=true; custom.devName='Hplay'; custom.marketUrl='';
@@ -1376,7 +1352,6 @@ function screenDef(sc){
     ]};
     case 'store': return {title:'Get More', items:[
       {lab:'Browse Apps', arrow:true, act(){ openStoreApps(); }},
-      {lab:'Browse Music', arrow:true, act(){ openStoreMusic(); }},
       {lab:'Browse Themes', arrow:true, act(){ openStoreThemes(); }},
       {lab:'Marketplace URL…', val: custom.marketUrl||'Not set', act(){ setMarketUrl(); }},
     ]};
@@ -1391,17 +1366,6 @@ function screenDef(sc){
         lab:a.name||a.id, val: extApps.some(x=>x.id===extAppKey(a)) ? 'Installed':'Install',
         act(){ installExtApp(a); }
       })) : [{lab:'No apps available', dim:true}]};
-    }
-    case 'storemusic': {
-      if(!custom.marketUrl) return {title:'Browse Music', items:[
-        {lab:'Set a Marketplace URL first', dim:true},
-        {lab:'Marketplace URL…', act(){ setMarketUrl(); }},
-      ]};
-      if(market.musicErr) return {title:'Browse Music', items:[{lab:'Couldn’t load: '+market.musicErr, dim:true}]};
-      if(market.music===null) return {title:'Browse Music', items:[{lab:'Loading…', dim:true}]};
-      return {title:'Browse Music', items: market.music.length ? market.music.map(s=>({
-        lab:s.title||s.id, val:'Download', act(){ installStoreSong(s); }
-      })) : [{lab:'No music available', dim:true}]};
     }
     case 'storethemes': {
       if(!custom.marketUrl) return {title:'Browse Themes', items:[
