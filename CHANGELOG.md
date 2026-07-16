@@ -17,6 +17,13 @@ Notable changes to Hplay.
 - A read-only `postMessage` bridge lets an installed app request a snapshot of
   the song list and usage stats — no write path, so it can't touch playback,
   the library, or settings.
+- Marketplace URL now defaults to the
+  [hplay-market](https://github.com/iwohost/hplay-market) site, so Browse
+  Apps/Themes/Decals work immediately with no setup.
+- Browse Apps/Themes/Decals now look like an actual storefront: letter-
+  monogram icons for apps, live color swatches for themes, real image
+  thumbnails for decals, and Get/Installed/Applied rendered as colored pill
+  badges.
 
 ## Lyrics
 
