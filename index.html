@@ -139,6 +139,29 @@
     color:#fff; text-shadow:0 1px 1px rgba(0,30,80,.35);
   }
   .row.sel .val, .row.sel .arrow { color:#e9f2fd; }
+  .row .micon {
+    flex:0 0 auto; width:calc(var(--su)*12); height:calc(var(--su)*12);
+    border-radius:calc(var(--su)*2.6); overflow:hidden;
+    display:flex; align-items:center; justify-content:center;
+    background:#e4e7ec;
+  }
+  .row .micon img { width:100%; height:100%; object-fit:contain; }
+  .row .micon.mono { font-weight:800; font-size:calc(var(--su)*7); color:#7a7f87; }
+  .row .micon.swatch { display:flex; align-items:stretch; padding:0; background:none; gap:1px; }
+  .row .micon.swatch i { flex:1; display:block; height:100%; border-radius:1.5px; }
+  .row.sel .micon.mono { color:#2064c6; background:#fff; }
+  .row .val.badge {
+    padding:calc(var(--su)*1.2) calc(var(--su)*5.5); border-radius:999px;
+    font-size:calc(var(--su)*7.6); font-weight:700;
+    background:rgba(140,144,155,.2); color:#5a5e66;
+  }
+  .row .val.badge.on { background:rgba(70,160,90,.24); color:#2c7a3f; }
+  .row.sel .val.badge { background:rgba(255,255,255,.24); color:#fff; }
+  .row.sel .val.badge.on { background:rgba(255,255,255,.34); color:#fff; }
+  body.darkui .row .micon { background:#262a31; }
+  body.darkui .row .micon.mono { color:#aab1bb; }
+  body.darkui .row .val.badge { background:rgba(255,255,255,.09); color:#aab1bb; }
+  body.darkui .row .val.badge.on { background:rgba(80,180,100,.24); color:#7be08c; }
   .row.dim { color:#9a9ea6; font-weight:500; }
   .row.danger { color:#d8261f; }
   .row.danger.sel {
@@ -1017,7 +1040,7 @@ async function restore(){
     if(s.wheelSize && WHEEL_SIZES[s.wheelSize]) custom.wheelSize = s.wheelSize;
     if(typeof s.sway==='boolean') custom.sway = s.sway;
     if(s.devName) custom.devName = String(s.devName).slice(0,20);
-    if(typeof s.marketUrl==='string') custom.marketUrl = s.marketUrl;
+    if(s.marketUrl) custom.marketUrl = s.marketUrl;
     if(typeof s.engraving==='string') custom.engraving = s.engraving.slice(0,40);
     applyCustom();
   }
@@ -1410,7 +1433,7 @@ const THEMES = {
 };
 let themeName = 'Blue';          // body color
 let wheelName = 'Match';         // wheel color ('Match' = follow body)
-const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay', marketUrl:'', engraving:'' };
+const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay', marketUrl:'https://iwohost.github.io/hplay-market', engraving:'' };
 const WHEEL_SIZES = { Small:['56vw','46dvh'], Normal:['64vw','52dvh'], Big:['74vw','60dvh'] };
 // installed downloadable themes: { id, name, b:[4], w:[4], c:[3], lab, labsh } — same shape as THEMES entries
 let extThemes = [];
@@ -1589,7 +1612,8 @@ function screenDef(sc){
       if(market.appsErr) return {title:'Browse Apps', items:[{lab:'Couldn’t load: '+market.appsErr, dim:true}]};
       if(market.apps===null) return {title:'Browse Apps', items:[{lab:'Loading…', dim:true}]};
       return {title:'Browse Apps', items: market.apps.length ? market.apps.map(a=>({
-        lab:a.name||a.id, val: extApps.some(x=>x.id===extAppKey(a)) ? 'Installed':'Install',
+        lab:a.name||a.id, market:true, badge:true, iconLetter:(a.name||a.id||'?').trim().slice(0,1).toUpperCase(),
+        val: extApps.some(x=>x.id===extAppKey(a)) ? 'Installed':'Get',
         act(){ installExtApp(a); }
       })) : [{lab:'No apps available', dim:true}]};
     }
@@ -1601,7 +1625,7 @@ function screenDef(sc){
       if(market.themesErr) return {title:'Browse Themes', items:[{lab:'Couldn’t load: '+market.themesErr, dim:true}]};
       if(market.themes===null) return {title:'Browse Themes', items:[{lab:'Loading…', dim:true}]};
       return {title:'Browse Themes', items: market.themes.length ? market.themes.map(t=>({
-        lab:t.name||t.id,
+        lab:t.name||t.id, market:true, badge:true, swatch: extThemeValid(t) ? t.b : null,
         val: !extThemeValid(t) ? 'Invalid' : (themeName===t.name ? 'Applied' : (extThemes.some(x=>x.id===extThemeKey(t)) ? 'Installed':'Get')),
         act(){ installExtTheme(t); }
       })) : [{lab:'No themes available', dim:true}]};
@@ -1614,7 +1638,8 @@ function screenDef(sc){
       if(market.decalsErr) return {title:'Browse Decals', items:[{lab:'Couldn’t load: '+market.decalsErr, dim:true}]};
       if(market.decals===null) return {title:'Browse Decals', items:[{lab:'Loading…', dim:true}]};
       return {title:'Browse Decals', items: market.decals.length ? market.decals.map(d=>({
-        lab:d.name||d.id, val: extDecals.some(x=>x.id===decalKey(d)) ? 'Installed':'Get',
+        lab:d.name||d.id, market:true, badge:true, icon: typeof d.file==='string' ? resolveUrl(d.file) : null,
+        val: extDecals.some(x=>x.id===decalKey(d)) ? 'Installed':'Get',
         act(){ installDecal(d); }
       })) : [{lab:'No decals available', dim:true}]};
     }
@@ -1866,9 +1891,15 @@ function render(){
   let rows = '';
   for(let i=sc.top; i<Math.min(items.length, sc.top+VISIBLE); i++){
     const it = items[i];
-    rows += `<div class="row ${i===sc.sel?'sel':''} ${it.dim?'dim':''} ${it.danger?'danger':''}">
+    const icon = !it.market ? '' :
+      it.icon    ? `<span class="micon"><img src="${it.icon}" alt=""></span>` :
+      it.swatch  ? `<span class="micon swatch">${it.swatch.map(c=>`<i style="background:${esc(c)}"></i>`).join('')}</span>` :
+      it.iconLetter ? `<span class="micon mono">${esc(it.iconLetter)}</span>` : '';
+    const valCls = it.badge ? 'val badge'+(/Installed|Applied/.test(it.val||'')?' on':'') : 'val';
+    rows += `<div class="row ${i===sc.sel?'sel':''} ${it.dim?'dim':''} ${it.danger?'danger':''} ${it.market?'market':''}">
+      ${icon}
       <span class="lab">${esc(it.lab)}</span>
-      ${it.val?`<span class="val">${esc(it.val)}</span>`:''}
+      ${it.val?`<span class="${valCls}">${esc(it.val)}</span>`:''}
       ${it.arrow?`<span class="arrow">›</span>`:''}
     </div>`;
   }
