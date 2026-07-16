@@ -564,7 +564,7 @@ function removeNote(id){
 // installed extension "apps": { id, name, desc, html }, loaded from IDB store 'extapps'
 let extApps = [];
 // transient browse state for the store screens; null = not loaded yet, [] = loaded empty
-const market = { apps:null, music:null, appsErr:null, musicErr:null };
+const market = { apps:null, music:null, themes:null, appsErr:null, musicErr:null, themesErr:null };
 function marketBase(){ return String(custom.marketUrl||'').replace(/\/+$/,''); }
 function resolveUrl(path){
   if(/^https?:\/\//i.test(path)) return path;
@@ -579,7 +579,7 @@ async function loadManifest(){
 }
 function setMarketUrl(){
   const u = prompt('Marketplace URL', custom.marketUrl || 'https://');
-  if(u!=null){ custom.marketUrl = u.trim(); saveSettings(); market.apps=market.music=null; market.appsErr=market.musicErr=null; render(); }
+  if(u!=null){ custom.marketUrl = u.trim(); saveSettings(); market.apps=market.music=market.themes=null; market.appsErr=market.musicErr=market.themesErr=null; render(); }
 }
 function openStoreApps(){
   stack.push({type:'storeapps', sel:0, top:0});
@@ -592,6 +592,29 @@ function openStoreMusic(){
   market.music = null; market.musicErr = null; render();
   loadManifest().then(m=>{ market.music = (m&&m.music)||[]; render(); })
                  .catch(e=>{ market.musicErr = String(e&&e.message||e); render(); });
+}
+function openStoreThemes(){
+  stack.push({type:'storethemes', sel:0, top:0});
+  market.themes = null; market.themesErr = null; render();
+  loadManifest().then(m=>{ market.themes = (m&&m.themes)||[]; render(); })
+                 .catch(e=>{ market.themesErr = String(e&&e.message||e); render(); });
+}
+function extThemeKey(item){ return 'theme:'+(item.id||item.name); }
+function extThemeValid(t){
+  return t && typeof t.name==='string' &&
+    Array.isArray(t.b) && t.b.length===4 && Array.isArray(t.w) && t.w.length===4 && Array.isArray(t.c) && t.c.length===3;
+}
+function installExtTheme(item){
+  if(!extThemeValid(item)){ toast('Invalid theme'); return; }
+  const rec = { id:extThemeKey(item), name:item.name, b:item.b, w:item.w, c:item.c,
+                lab:item.lab||'#f2f5ff', labsh:item.labsh||'rgba(0,10,50,.6)' };
+  const i = extThemes.findIndex(x=>x.id===rec.id);
+  if(i>=0) extThemes[i]=rec; else extThemes.push(rec);
+  dbPut('extthemes', rec);
+  applyTheme(rec.name);
+  saveSettings();
+  toast('Applied '+rec.name);
+  render();
 }
 function extAppKey(item){ return 'ext:'+(item.id||item.file); }
 async function installExtApp(item){
@@ -692,7 +715,7 @@ function idb(){
     let settled = false;
     const done = (val)=>{ if(settled) return; settled = true; res(val); };
     try{
-      const rq = indexedDB.open('hplay', 4);
+      const rq = indexedDB.open('hplay', 5);
       rq.onupgradeneeded = ()=>{
         const d = rq.result;
         if(!d.objectStoreNames.contains('songs')) d.createObjectStore('songs', {keyPath:'id'});
@@ -700,6 +723,7 @@ function idb(){
         if(!d.objectStoreNames.contains('tags'))  d.createObjectStore('tags');
         if(!d.objectStoreNames.contains('notes')) d.createObjectStore('notes', {keyPath:'id'});
         if(!d.objectStoreNames.contains('extapps')) d.createObjectStore('extapps', {keyPath:'id'});
+        if(!d.objectStoreNames.contains('extthemes')) d.createObjectStore('extthemes', {keyPath:'id'});
       };
       rq.onsuccess = ()=>{
         db = rq.result;
@@ -769,13 +793,14 @@ function saveSettings(){
                 sleepEnd:sleepEndMode, fadeSec:fadeSec }, 'settings');
 }
 async function eraseAll(){
-  await dbClear('songs'); await dbClear('kv'); await dbClear('tags'); await dbClear('extapps');
+  await dbClear('songs'); await dbClear('kv'); await dbClear('tags'); await dbClear('extapps'); await dbClear('extthemes');
   dirHandle = null; folderNeedsTap = false; excluded.clear();
   lib.length = 0; playlist = []; pIdx = -1;
   audio.pause(); audio.removeAttribute('src');
   extApps.forEach(a=>{ if(a._blobUrl){ try{ URL.revokeObjectURL(a._blobUrl); }catch(e){} } });
   extApps.length = 0;
-  market.apps = market.music = null; market.appsErr = market.musicErr = null;
+  extThemes.length = 0;
+  market.apps = market.music = market.themes = null; market.appsErr = market.musicErr = market.themesErr = null;
   stack.length = 1; stack[0] = {type:'main', sel:0, top:0};
   applyTheme('Blue'); applyWheelColor('Match');
   custom.dark=false; custom.wheelSize='Normal'; custom.sway=true; custom.devName='Hplay'; custom.marketUrl='';
@@ -786,12 +811,14 @@ async function eraseAll(){
   render();
 }
 async function restore(){
+  try{ extApps = await dbAll('extapps'); }catch(e){ extApps = []; }
+  try{ extThemes = await dbAll('extthemes'); }catch(e){ extThemes = []; }
   const s = await dbGet('kv','settings');
   if(s){
     if(typeof s.shuffle==='boolean') settings.shuffle = s.shuffle;
     if(s.repeat)  settings.repeat  = s.repeat;
     if(typeof s.clicker==='boolean') settings.clicker = s.clicker;
-    if(s.theme && THEMES[s.theme]) applyTheme(s.theme);
+    if(s.theme && themeByName(s.theme)) applyTheme(s.theme);
     if(s.wheel) applyWheelColor(s.wheel);
     if(typeof s.volume==='number') audio.volume = s.volume;
     if(s.sleepEnd && SLEEP_ENDS.includes(s.sleepEnd)) sleepEndMode = s.sleepEnd;
@@ -803,7 +830,6 @@ async function restore(){
     if(typeof s.marketUrl==='string') custom.marketUrl = s.marketUrl;
     applyCustom();
   }
-  try{ extApps = await dbAll('extapps'); }catch(e){ extApps = []; }
   try{
     const st = await dbGet('kv','appStats');
     appStats = Object.assign({ opens:0, playCount:0, playMs:0, quizAnswered:0, quizCorrect:0, quizBest:0, songPlays:{} }, st||{});
@@ -1195,9 +1221,13 @@ let themeName = 'Blue';          // body color
 let wheelName = 'Match';         // wheel color ('Match' = follow body)
 const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay', marketUrl:'' };
 const WHEEL_SIZES = { Small:['56vw','46dvh'], Normal:['64vw','52dvh'], Big:['74vw','60dvh'] };
+// installed downloadable themes: { id, name, b:[4], w:[4], c:[3], lab, labsh } — same shape as THEMES entries
+let extThemes = [];
+function themeByName(name){ return THEMES[name] || extThemes.find(t=>t.name===name); }
+function allThemeNames(){ return [...Object.keys(THEMES), ...extThemes.map(t=>t.name)]; }
 function applyColors(){
-  const b = THEMES[themeName]; if(!b) return;
-  const w = (wheelName!=='Match' && THEMES[wheelName]) ? THEMES[wheelName] : b;
+  const b = themeByName(themeName); if(!b) return;
+  const w = (wheelName!=='Match' && themeByName(wheelName)) ? themeByName(wheelName) : b;
   const r = document.documentElement.style;
   b.b.forEach((v,i)=>r.setProperty('--b'+(i+1), v));
   w.w.forEach((v,i)=>r.setProperty('--w'+(i+1), v));
@@ -1207,8 +1237,8 @@ function applyColors(){
   const meta = document.querySelector('meta[name=theme-color]');
   if(meta) meta.content = b.b[3];
 }
-function applyTheme(name){ if(THEMES[name]){ themeName = name; applyColors(); } }
-function applyWheelColor(name){ if(name==='Match'||THEMES[name]){ wheelName = name; applyColors(); } }
+function applyTheme(name){ if(themeByName(name)){ themeName = name; applyColors(); } }
+function applyWheelColor(name){ if(name==='Match'||themeByName(name)){ wheelName = name; applyColors(); } }
 function applyCustom(){
   document.body.classList.toggle('darkui', custom.dark);
   document.body.classList.toggle('nosway', !custom.sway);
@@ -1290,17 +1320,17 @@ function screenDef(sc){
       return {title:'Playlists', items: als.length ? als.map(a=>({lab:a, arrow:true, go:{type:'songs', sel:0, top:0, filter:{album:a}}})) : [{lab:'No Playlists', dim:true}]};
     }
     case 'custom': return {title:'Customize', items:[
-      {lab:'Body Color', arrow:true, val:themeName, go:{type:'colors', sel:Object.keys(THEMES).indexOf(themeName), top:0}},
-      {lab:'Wheel Color', arrow:true, val:wheelName, go:{type:'wcolors', sel:['Match',...Object.keys(THEMES)].indexOf(wheelName), top:0}},
+      {lab:'Body Color', arrow:true, val:themeName, go:{type:'colors', sel:allThemeNames().indexOf(themeName), top:0}},
+      {lab:'Wheel Color', arrow:true, val:wheelName, go:{type:'wcolors', sel:['Match',...allThemeNames()].indexOf(wheelName), top:0}},
       {lab:'Screen', val: custom.dark?'Dark':'Light', act(){ custom.dark=!custom.dark; applyCustom(); saveSettings(); render(); }},
       {lab:'Wheel Size', val: custom.wheelSize, act(){ const o=Object.keys(WHEEL_SIZES); custom.wheelSize=o[(o.indexOf(custom.wheelSize)+1)%o.length]; applyCustom(); saveSettings(); render(); }},
       {lab:'Art Motion', val: custom.sway?'On':'Off', act(){ custom.sway=!custom.sway; applyCustom(); saveSettings(); render(); }},
       {lab:'Name…', val: custom.devName, act(){ const n=prompt('Name your Hplay', custom.devName); if(n&&n.trim()){ custom.devName=n.trim().slice(0,20); saveSettings(); render(); } }},
     ]};
-    case 'colors': return {title:'Body Color', items: Object.keys(THEMES).map(n=>(
+    case 'colors': return {title:'Body Color', items: allThemeNames().map(n=>(
       {lab:n, val: n===themeName?'✓':'', act(){ applyTheme(n); saveSettings(); render(); }}
     ))};
-    case 'wcolors': return {title:'Wheel Color', items: ['Match',...Object.keys(THEMES)].map(n=>(
+    case 'wcolors': return {title:'Wheel Color', items: ['Match',...allThemeNames()].map(n=>(
       {lab:n, val: n===wheelName?'✓':'', act(){ applyWheelColor(n); saveSettings(); render(); }}
     ))};
     case 'settings': return {title:'Settings', items:[
@@ -1347,6 +1377,7 @@ function screenDef(sc){
     case 'store': return {title:'Get More', items:[
       {lab:'Browse Apps', arrow:true, act(){ openStoreApps(); }},
       {lab:'Browse Music', arrow:true, act(){ openStoreMusic(); }},
+      {lab:'Browse Themes', arrow:true, act(){ openStoreThemes(); }},
       {lab:'Marketplace URL…', val: custom.marketUrl||'Not set', act(){ setMarketUrl(); }},
     ]};
     case 'storeapps': {
@@ -1371,6 +1402,19 @@ function screenDef(sc){
       return {title:'Browse Music', items: market.music.length ? market.music.map(s=>({
         lab:s.title||s.id, val:'Download', act(){ installStoreSong(s); }
       })) : [{lab:'No music available', dim:true}]};
+    }
+    case 'storethemes': {
+      if(!custom.marketUrl) return {title:'Browse Themes', items:[
+        {lab:'Set a Marketplace URL first', dim:true},
+        {lab:'Marketplace URL…', act(){ setMarketUrl(); }},
+      ]};
+      if(market.themesErr) return {title:'Browse Themes', items:[{lab:'Couldn’t load: '+market.themesErr, dim:true}]};
+      if(market.themes===null) return {title:'Browse Themes', items:[{lab:'Loading…', dim:true}]};
+      return {title:'Browse Themes', items: market.themes.length ? market.themes.map(t=>({
+        lab:t.name||t.id,
+        val: !extThemeValid(t) ? 'Invalid' : (themeName===t.name ? 'Applied' : (extThemes.some(x=>x.id===extThemeKey(t)) ? 'Installed':'Get')),
+        act(){ installExtTheme(t); }
+      })) : [{lab:'No themes available', dim:true}]};
     }
     case 'extappview': {
       const a = extApps.find(x=>x.id===sc.extId);
