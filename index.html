@@ -2063,6 +2063,11 @@ function scroll(dir, mult){
   clickSound();
   mult = mult || 1;
   const sc = cur();
+  if(sc.type==='extapp'){
+    const ifr = document.getElementById('extframe');
+    if(ifr && ifr.contentWindow) ifr.contentWindow.postMessage({channel:'hplay', type:'wheel', dir, mult}, '*');
+    return;
+  }
   if(sc.type==='np'){
     if(npMode===1){
       const dur = isFinite(audio.duration) ? audio.duration : 0;
@@ -2111,6 +2116,11 @@ function scroll(dir, mult){
 function select(){
   ensureAC(); clickSound('select');
   const sc = cur();
+  if(sc.type==='extapp'){
+    const ifr = document.getElementById('extframe');
+    if(ifr && ifr.contentWindow) ifr.contentWindow.postMessage({channel:'hplay', type:'select'}, '*');
+    return;
+  }
   if(sc.type==='np'){
     const s = nowSong();
     const hasLyrics = s && (s.sylt || s.lyricsText);
