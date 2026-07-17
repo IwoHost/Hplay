@@ -204,7 +204,7 @@
   /* --- now playing (like the real one) --- */
   .np { flex:1; display:flex; flex-direction:column; padding:calc(var(--su)*10) calc(var(--su)*9) calc(var(--su)*7); position:relative; }
   .np .shuf { position:absolute; top:calc(var(--su)*4); right:calc(var(--su)*8); width:calc(var(--su)*14); height:calc(var(--su)*9); color:#3f8bde; }
-  .np .mid { flex:1; display:flex; gap:calc(var(--su)*9); align-items:center; min-height:0; perspective:70vw; }
+  .np .mid { flex:1; display:flex; gap:calc(var(--su)*9); align-items:center; min-height:0; perspective:70vw; overflow:hidden; }
   .art {
     flex:0 0 44%; aspect-ratio:1;
     background:#dfe2e6 center/cover no-repeat;
