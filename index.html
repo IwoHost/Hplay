@@ -1211,6 +1211,7 @@ function readTags(f){
 }
 const IN_WRAPPER = /HplayApp/.test(navigator.userAgent);
 async function pickFolder(){
+  console.log('[pickFolder] called; IN_WRAPPER='+IN_WRAPPER+' NATIVE='+NATIVE+' hasAPI='+(!!window.showDirectoryPicker));
   if(NATIVE){ Android.pickFolder(); return; }
   if(window.showDirectoryPicker && !IN_WRAPPER){
     try{
@@ -1220,9 +1221,11 @@ async function pickFolder(){
       await scanFolder();
     }catch(e){
       if(e && e.name==='AbortError') return;   // user cancelled the picker
+      console.log('[pickFolder] showDirectoryPicker failed, falling back: '+e);
       $folder.click();   // API present but unsupported/broken here - fall back to the file input
     }
   } else {
+    console.log('[pickFolder] clicking hidden folder input');
     $folder.click();   // fallback: import a whole folder's files into storage
   }
 }
