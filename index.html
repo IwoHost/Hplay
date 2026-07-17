@@ -429,16 +429,6 @@
     background:#0f4fa8; color:#fff; font-weight:700; font-size:15px;
     padding:11px 30px; border:none; border-radius:999px; box-shadow:0 4px 14px rgba(0,0,0,.35);
   }
-  .engraving{
-    position:absolute; left:50%; top:0; transform:translate(-50%,-50%);
-    text-align:center; padding:0 8vw; max-width:84vw;
-    font-family:inherit; font-style:italic; font-weight:500;
-    font-size:min(3.6vw, calc(var(--vh, 1vh) * 1.8)); letter-spacing:.03em;
-    color:rgba(255,255,255,.5);
-    text-shadow:0 -1px 1px rgba(0,10,40,.5), 0 1px 0 rgba(255,255,255,.18);
-    overflow:hidden; white-space:nowrap; text-overflow:ellipsis; z-index:2; pointer-events:none;
-  }
-  body.darkui .engraving{ color:rgba(255,255,255,.38); }
 
   /* ============ BOOT SCREEN ============ */
   .bootscreen{
@@ -492,7 +482,6 @@
     <div class="preview" id="preview"></div>
     <div class="permAsk hidden" id="permAsk"></div>
   </div>
-  <div class="engraving hidden" id="engraving"></div>
   <div class="wheelZone" id="wheel">
     <div class="wheelFace" id="wheelFace">
       <div class="wlab menu">MENU</div>
@@ -528,15 +517,6 @@ function setUnits(){
   document.documentElement.style.setProperty('--vh', (window.innerHeight*0.01)+'px');
   const h = $screen.clientHeight || 1;
   document.documentElement.style.setProperty('--su', (h/240)+'px');
-  positionEngraving();
-}
-function positionEngraving(){
-  const el = document.getElementById('engraving');
-  const bezel = document.querySelector('.bezel');
-  if(!el || !bezel || !$wheel) return;
-  const bRect = bezel.getBoundingClientRect();
-  const wRect = $wheel.getBoundingClientRect();
-  el.style.top = ((bRect.bottom + wRect.top) / 2) + 'px';
 }
 // keep re-measuring while the layout settles (immersive mode engaging, boot
 // animation, system bars), then freeze it for good — no more resizing after that,
@@ -664,7 +644,7 @@ function removeNote(id){
 // installed extension "apps": { id, name, desc, html }, loaded from IDB store 'extapps'
 let extApps = [];
 // transient browse state for the store screens; null = not loaded yet, [] = loaded empty
-const market = { apps:null, themes:null, decals:null, appsErr:null, themesErr:null, decalsErr:null };
+const market = { apps:null, themes:null, appsErr:null, themesErr:null };
 // fixed on purpose: Get More only ever points at this marketplace, not user-editable
 const MARKET_URL = 'https://iwohost.github.io/hplay-market';
 function marketBase(){ return MARKET_URL.replace(/\/+$/,''); }
@@ -689,12 +669,6 @@ function openStoreThemes(){
   loadManifest().then(m=>{ market.themes = (m&&m.themes)||[]; render(); })
                  .catch(e=>{ market.themesErr = String(e&&e.message||e); render(); });
 }
-function openStoreDecals(){
-  stack.push({type:'storedecals', sel:0, top:0});
-  market.decals = null; market.decalsErr = null; render();
-  loadManifest().then(m=>{ market.decals = (m&&m.decals)||[]; render(); })
-                 .catch(e=>{ market.decalsErr = String(e&&e.message||e); render(); });
-}
 function extThemeKey(item){ return 'theme:'+(item.id||item.name); }
 function extThemeValid(t){
   return t && typeof t.name==='string' &&
@@ -715,7 +689,6 @@ function installExtTheme(item){
 // installed decals: purely decorative images, no code — { id, name, blob, x, y, w, rot, hidden }
 let extDecals = [];
 function clampNum(v, lo, hi, def){ v = Number(v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : def; }
-function decalKey(item){ return 'decal:'+(item.id||item.file); }
 function renderDecalLayer(){
   const el = document.getElementById('decalLayer'); if(!el) return;
   el.innerHTML = extDecals.filter(d=>!d.hidden).map(d=>
@@ -829,30 +802,6 @@ $decalLayer.addEventListener('pointerdown', onDecalPointerDown);
 $decalLayer.addEventListener('pointermove', onDecalPointerMove);
 $decalLayer.addEventListener('pointerup', onDecalPointerUp);
 $decalLayer.addEventListener('pointercancel', onDecalPointerUp);
-async function installDecal(item){
-  if(!item || typeof item.file!=='string'){ toast('Invalid decal'); return; }
-  const key = decalKey(item);
-  try{
-    toast('Downloading '+(item.name||'decal')+'…');
-    const res = await fetch(resolveUrl(item.file), {cache:'no-store'});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const blob = await res.blob();
-    const rec = {
-      id:key, name:item.name||item.id||'Decal', blob,
-      x:clampNum(item.x,0,100,50), y:clampNum(item.y,0,100,50),
-      w:clampNum(item.w,4,40,14), rot:clampNum(item.rot,-180,180,0),
-      hidden:false
-    };
-    const i = extDecals.findIndex(x=>x.id===key);
-    if(i>=0){ if(extDecals[i].url){ try{ URL.revokeObjectURL(extDecals[i].url); }catch(e){} } }
-    rec.url = URL.createObjectURL(blob);
-    if(i>=0) extDecals[i]=rec; else extDecals.push(rec);
-    dbPut('extdecals', { id:rec.id, name:rec.name, blob:rec.blob, x:rec.x, y:rec.y, w:rec.w, rot:rec.rot, hidden:rec.hidden });
-    renderDecalLayer();
-    toast('Placed '+rec.name);
-    render();
-  }catch(e){ toast('Install failed'); }
-}
 function addPhotoDecal(file){
   const id = 'photo:'+Date.now()+':'+Math.floor(Math.random()*1e6);
   const rec = {
@@ -1115,7 +1064,6 @@ function saveSettings(){
   dbPut('kv', { shuffle:settings.shuffle, repeat:settings.repeat, clicker:settings.clicker,
                 theme:themeName, wheel:wheelName, volume:audio.volume,
                 dark:custom.dark, wheelSize:custom.wheelSize, sway:custom.sway, devName:custom.devName,
-                engraving:custom.engraving,
                 sleepEnd:sleepEndMode, fadeSec:fadeSec }, 'settings');
 }
 async function eraseAll(){
@@ -1132,10 +1080,10 @@ async function eraseAll(){
   extDecals.length = 0;
   playlistOrder = {}; savePlaylistOrder();
   renderDecalLayer();
-  market.apps = market.themes = market.decals = null; market.appsErr = market.themesErr = market.decalsErr = null;
+  market.apps = market.themes = null; market.appsErr = market.themesErr = null;
   stack.length = 1; stack[0] = {type:'main', sel:0, top:0};
   applyTheme('Blue'); applyWheelColor('Match');
-  custom.dark=false; custom.wheelSize='Normal'; custom.sway=true; custom.devName='Hplay'; custom.engraving='';
+  custom.dark=false; custom.wheelSize='Normal'; custom.sway=true; custom.devName='Hplay';
   applyCustom();
   settings.shuffle=false; settings.repeat='Off'; settings.clicker=true;
   appStats = { opens:0, playCount:0, playMs:0, quizAnswered:0, quizCorrect:0, quizBest:0, songPlays:{} };
@@ -1165,7 +1113,6 @@ async function restore(){
     if(s.wheelSize && WHEEL_SIZES[s.wheelSize]) custom.wheelSize = s.wheelSize;
     if(typeof s.sway==='boolean') custom.sway = s.sway;
     if(s.devName) custom.devName = String(s.devName).slice(0,20);
-    if(typeof s.engraving==='string') custom.engraving = s.engraving.slice(0,40);
     applyCustom();
   }
   try{
@@ -1576,7 +1523,7 @@ const THEMES = {
 };
 let themeName = 'Blue';          // body color
 let wheelName = 'Match';         // wheel color ('Match' = follow body)
-const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay', engraving:'' };
+const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay' };
 const WHEEL_SIZES = {
   Small:  ['56vw', 'calc(var(--vh, 1vh) * 46)'],
   Normal: ['64vw', 'calc(var(--vh, 1vh) * 52)'],
@@ -1607,14 +1554,6 @@ function applyCustom(){
   const r = document.documentElement.style;
   r.setProperty('--wheelsize', sz[0]);
   r.setProperty('--wheelmax', sz[1]);
-  updateEngraving();
-}
-function updateEngraving(){
-  const el = document.getElementById('engraving'); if(!el) return;
-  const txt = (custom.engraving||'').trim();
-  el.textContent = txt;
-  el.classList.toggle('hidden', !txt);
-  positionEngraving();
 }
 
 /* ---------- fullscreen: any tap pushes the phone into Hplay mode ---------- */
@@ -1763,7 +1702,6 @@ function screenDef(sc){
       {lab:'Wheel Size', val: custom.wheelSize, act(){ const o=Object.keys(WHEEL_SIZES); custom.wheelSize=o[(o.indexOf(custom.wheelSize)+1)%o.length]; applyCustom(); saveSettings(); render(); }},
       {lab:'Art Motion', val: custom.sway?'On':'Off', act(){ custom.sway=!custom.sway; applyCustom(); saveSettings(); render(); }},
       {lab:'Decals', arrow:true, go:{type:'decalsmanage', sel:0, top:0}},
-      {lab:'Engraving…', val: custom.engraving||'None', act(){ openTextEntry('Engraving', custom.engraving||'', (n)=>{ custom.engraving=n.trim().slice(0,40); applyCustom(); saveSettings(); render(); }); }},
       {lab:'Name…', val: custom.devName, act(){ openTextEntry('Name your Hplay', custom.devName, (n)=>{ if(n&&n.trim()){ custom.devName=n.trim().slice(0,20); saveSettings(); } render(); }); }},
     ]};
     case 'colors': return {title:'Body Color', items: [
@@ -1841,26 +1779,15 @@ function screenDef(sc){
         act(){ installExtTheme(t); }
       })) : [{lab:'No themes available', dim:true}]};
     }
-    case 'storedecals': {
-      if(market.decalsErr) return {title:'Browse Decals', items:[{lab:'Couldn’t load: '+market.decalsErr, dim:true}]};
-      if(market.decals===null) return {title:'Browse Decals', items:[{lab:'Loading…', dim:true}]};
-      return {title:'Browse Decals', items: market.decals.length ? market.decals.map(d=>({
-        lab:d.name||d.id, market:true, badge:true, icon: typeof d.file==='string' ? resolveUrl(d.file) : null,
-        val: extDecals.some(x=>x.id===decalKey(d)) ? 'Installed':'Get',
-        act(){ installDecal(d); }
-      })) : [{lab:'No decals available', dim:true}]};
-    }
     case 'decalsmanage': return {title:'Decals', items: extDecals.length ? [
       {lab:'Add Photo…', act(){ $decalPhoto.click(); }},
       {lab:'Arrange on Screen', act(){ enterArrangeMode(); }},
       ...extDecals.map(d=>({
         lab:d.name, val: d.hidden?'Hidden':'Shown', arrow:true, go:{type:'decalview', decalId:d.id, sel:0, top:0}
       })),
-      {lab:'Get More Decals…', arrow:true, act(){ openStoreDecals(); }},
     ] : [
       {lab:'Add Photo…', act(){ $decalPhoto.click(); }},
       {lab:'No decals installed', dim:true},
-      {lab:'Get More Decals…', arrow:true, act(){ openStoreDecals(); }},
     ]};
     case 'decalview': {
       const d = extDecals.find(x=>x.id===sc.decalId);
