@@ -370,6 +370,18 @@
     margin-top:calc(var(--su)*7); padding-top:calc(var(--su)*5); border-top:1px solid rgba(255,255,255,.1); }
   .preview .pv-next{ color:#c7ccd6; font-weight:600; font-size:calc(var(--su)*8.6); margin-top:calc(var(--su)*3);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  .permAsk{ position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:11;
+    max-width:78%; min-width:64%; border-radius:calc(var(--su)*7);
+    display:flex; flex-direction:column; pointer-events:none;
+    padding:calc(var(--su)*8) calc(var(--su)*9);
+    background:rgba(16,20,28,.94); border:1px solid rgba(255,255,255,.08);
+    box-shadow:0 calc(var(--su)*5) calc(var(--su)*18) rgba(0,0,0,.45); text-align:left; }
+  .permAsk .pv-now{ color:#fff; font-weight:700; font-size:calc(var(--su)*9.5); line-height:1.35;
+    white-space:normal; margin-top:calc(var(--su)*2); }
+  .permBtns{ display:flex; gap:calc(var(--su)*6); margin-top:calc(var(--su)*8); }
+  .permBtn{ flex:1; text-align:center; padding:calc(var(--su)*5) 0; border-radius:999px;
+    font-size:calc(var(--su)*9.5); font-weight:700; background:rgba(255,255,255,.1); color:#e9edf3; }
+  .permBtn.sel{ background:linear-gradient(180deg,#84bef0,#2064c6); color:#fff; }
   .sleepclock{ text-align:center; font-weight:800; font-variant-numeric:tabular-nums;
     font-size:calc(var(--su)*34); letter-spacing:.02em; padding:calc(var(--su)*11) 0 calc(var(--su)*3); line-height:1; }
   .sleepclock .sub{ display:block; font-size:calc(var(--su)*8); font-weight:700; color:#8b8f97;
@@ -467,6 +479,7 @@
     </div>
     <div class="letter hidden" id="letter"></div>
     <div class="preview" id="preview"></div>
+    <div class="permAsk hidden" id="permAsk"></div>
   </div>
   <div class="engraving hidden" id="engraving"></div>
   <div class="wheelZone" id="wheel">
@@ -827,7 +840,7 @@ async function installExtApp(item){
     const res = await fetch(resolveUrl(item.file), {cache:'no-store'});
     if(!res.ok) throw new Error('HTTP '+res.status);
     const html = await res.text();
-    const rec = { id:key, name:item.name||item.id||'App', desc:item.desc||'', html };
+    const rec = { id:key, name:item.name||item.id||'App', desc:item.desc||'', html, perms:{media:null} };
     const i = extApps.findIndex(x=>x.id===key);
     if(i>=0){ if(extApps[i]._blobUrl){ try{ URL.revokeObjectURL(extApps[i]._blobUrl); }catch(e){} } extApps[i]=rec; }
     else extApps.push(rec);
@@ -842,21 +855,86 @@ function uninstallExt(id){
   dbDelete('extapps', id);
 }
 // read-only bridge: a running extension app can ask (via postMessage) for the song
-// list and usage stats. No write access — an app can't touch the library, playback,
-// or settings this way, only read a snapshot of them.
+// list, usage stats, and — with permission — the actual audio/art of a song. No
+// write access — an app can't touch playback, the library, or settings this way.
+let pendingMedia = null; // { extId, kind:'getAudio'|'getArt', songId, ifr } awaiting an Allow/Deny answer
 window.addEventListener('message', (ev)=>{
   const ifr = document.getElementById('extframe');
   if(!ifr || ev.source !== ifr.contentWindow) return;
   const msg = ev.data;
   if(!msg || typeof msg!=='object' || msg.channel!=='hplay') return;
   if(msg.type==='getLibrary'){
-    const data = lib.map(s=>({ title:dispTitle(s.title), artist:s.artist, album:s.album }));
+    const data = lib.map(s=>({ id:s.id, title:dispTitle(s.title), artist:s.artist, album:s.album }));
     ifr.contentWindow.postMessage({channel:'hplay', type:'library', data}, '*');
   } else if(msg.type==='getStats'){
     const data = Object.assign({}, appStats, { songCount: lib.length });
     ifr.contentWindow.postMessage({channel:'hplay', type:'stats', data}, '*');
+  } else if(msg.type==='getAudio' || msg.type==='getArt'){
+    requestMedia(msg.type, msg.id, ifr);
   }
 });
+function requestMedia(kind, songId, ifr){
+  if(cur().type!=='extapp') return;
+  const extId = cur().extId;
+  const app = extApps.find(x=>x.id===extId);
+  if(!app) return;
+  if(!app.perms) app.perms = {media:null};
+  if(app.perms.media===true){ deliverMedia(kind, songId, ifr); return; }
+  if(app.perms.media===false){ ifr.contentWindow.postMessage({channel:'hplay', type:'mediaDenied'}, '*'); return; }
+  pendingMedia = { extId, kind, songId, ifr };
+  permAskSel = 0;
+  showPermAsk();
+}
+function deliverMedia(kind, songId, ifr){
+  const s = song(songId);
+  if(!s){ ifr.contentWindow.postMessage({channel:'hplay', type:'mediaError', reason:'not found'}, '*'); return; }
+  if(kind==='getAudio'){
+    if(!s._blob){ ifr.contentWindow.postMessage({channel:'hplay', type:'mediaError', reason:'unsupported'}, '*'); return; }
+    ifr.contentWindow.postMessage({channel:'hplay', type:'audio', id:songId, blob:s._blob}, '*');
+  } else {
+    if(!s._artBlob){ ifr.contentWindow.postMessage({channel:'hplay', type:'mediaError', reason:'no art'}, '*'); return; }
+    ifr.contentWindow.postMessage({channel:'hplay', type:'art', id:songId, blob:s._artBlob}, '*');
+  }
+}
+// the permission ask is a floating overlay, NOT a pushed screen — pushing a screen would
+// replace #screen's innerHTML and tear down the running app's iframe underneath it
+let permAskSel = 0;
+function permAskHTML(){
+  const app = extApps.find(x=>x.id===pendingMedia.extId);
+  const nm = app ? app.name : 'App';
+  return `<div class="pv-eyebrow">Permission</div>
+    <div class="pv-now">${esc(nm)} wants your song audio &amp; art</div>
+    <div class="permBtns">
+      <div class="permBtn ${permAskSel===0?'sel':''}">Deny</div>
+      <div class="permBtn ${permAskSel===1?'sel':''}">Allow</div>
+    </div>`;
+}
+function showPermAsk(){
+  const el = document.getElementById('permAsk'); if(!el) return;
+  el.innerHTML = permAskHTML();
+  el.classList.remove('hidden');
+}
+function renderPermAsk(){
+  const el = document.getElementById('permAsk'); if(!el || el.classList.contains('hidden')) return;
+  el.innerHTML = permAskHTML();
+}
+function hidePermAsk(){
+  const el = document.getElementById('permAsk'); if(el) el.classList.add('hidden');
+}
+function permDecide(allow){
+  if(!pendingMedia) return;
+  const pm = pendingMedia; pendingMedia = null;
+  hidePermAsk();
+  const app = extApps.find(x=>x.id===pm.extId);
+  if(app){
+    app.perms = app.perms||{}; app.perms.media = allow;
+    dbPut('extapps', {id:app.id, name:app.name, desc:app.desc, html:app.html, perms:app.perms});
+  }
+  if(allow) deliverMedia(pm.kind, pm.songId, pm.ifr);
+  else if(pm.ifr && pm.ifr.contentWindow) pm.ifr.contentWindow.postMessage({channel:'hplay', type:'mediaDenied'}, '*');
+}
+function permYes(){ permDecide(true); }
+function permNo(){ permDecide(false); }
 /* ---------- Extras: Music Quiz ---------- */
 let quiz = null;
 let quizNextTimer = 0;
@@ -1172,7 +1250,7 @@ async function scanFolder(){
       if(lib.some(s=>s._fkey===key)) continue;
       let meta = await dbGet('tags', key);
       if(!meta){ meta = await readTags(f); dbPut('tags', meta, key); }
-      lib.push({ id:nextId++, file:null, _tagged:true, src:'folder', _fkey:key,
+      lib.push({ id:nextId++, file:null, _tagged:true, src:'folder', _fkey:key, _blob:f, _artBlob: meta.artBlob||null,
                  url:URL.createObjectURL(f),
                  title:meta.title, artist:meta.artist,
                  album: folderAlbum || meta.album,
@@ -1997,6 +2075,7 @@ function scroll(dir, mult){
     render();
     return;
   }
+  if(pendingMedia){ permAskSel = Math.max(0, Math.min(1, permAskSel+dir)); renderPermAsk(); return; }
   if(sc.type==='confirmdel'){ sc.sel = Math.max(0, Math.min(1, (sc.sel||0)+dir)); render(); return; }
   if(sc.type==='quiz'){ quizScroll(dir); return; }
   if(sc.type==='songs' && sc.reordering && sc.filter && sc.filter.album){
@@ -2035,6 +2114,7 @@ function select(){
     npMode = npMode===0 ? 1 : (npMode===1 && hasLyrics ? 2 : 0);
     render(); return;
   }
+  if(pendingMedia){ (permAskSel===1?permYes:permNo)(); return; }
   if(sc.type==='confirmdel'){ (sc.sel===1?delYes:delNo)(); return; }
   if(sc.type==='quiz'){ quizAnswer(); return; }
   if(sc.type==='songs' && sc.reordering){ sc.reordering=false; toast('Order saved'); render(); return; }
@@ -2046,6 +2126,7 @@ function select(){
 }
 function back(){
   ensureAC(); clickSound();
+  if(pendingMedia){ permNo(); return; }
   if(arranging){ exitArrangeMode(); return; }
   if(stack.length>1){ npMode=0; stack.pop(); render(); }
 }
@@ -2080,7 +2161,7 @@ function untiltFace(){ if($face){ $face.style.transition=''; $face.style.transfo
 function currentRowSongId(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.songId:undefined; }
 function currentRowExtId(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.extId:undefined; }
 function currentRowPlaylistName(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.playlistName:undefined; }
-function goHome(){ if(arranging) exitArrangeMode(); npMode=0; stack.length=1; stack[0]={type:'main', sel:0, top:0}; render(); }
+function goHome(){ if(pendingMedia) permNo(); if(arranging) exitArrangeMode(); npMode=0; stack.length=1; stack[0]={type:'main', sel:0, top:0}; render(); }
 function openSleep(){ stack.push({type:'sleeptimer', sel:0, top:0}); render(); }
 function openDelete(id, kind){
   kind = kind||'song';
@@ -2185,6 +2266,11 @@ function gEnd(x,y){
     if(d < 0.38){ select(); return; }        // center = confirm highlighted
     if(a>=-45 && a<45){ delYes(); return; }   // right = delete
     delNo(); return;                          // left / top / bottom = cancel
+  }
+  if(pendingMedia){
+    if(d < 0.38){ select(); return; }        // center = confirm highlighted
+    if(a>=-45 && a<45){ permYes(); return; }  // right = allow
+    permNo(); return;                         // left / top / bottom = deny
   }
   if(d < 0.38){ select(); return; }
   if(a>=-135 && a<-45) back();
