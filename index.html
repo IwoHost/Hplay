@@ -1172,6 +1172,10 @@ async function restore(){
       else folderNeedsTap = true;
     }
   }catch(e){}
+  try{
+    const nativeUri = await dbGet('kv','nativeFolderUri');
+    if(nativeUri && NATIVE && typeof Android.rescanFolder==='function') Android.rescanFolder(nativeUri);
+  }catch(e){}
   applyResume();
   render();
   if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
@@ -1284,7 +1288,9 @@ $folder.addEventListener('change', e => { addFiles(e.target.files); e.target.val
 /* ---------- native app bridge: receives folder contents picked via Android's file picker ---------- */
 window.nativeFolderScanned = function(jsonStr){
   try{
-    const files = JSON.parse(jsonStr);
+    const data = JSON.parse(jsonStr);
+    const files = Array.isArray(data) ? data : (data.files||[]);   // accept either shape
+    if(!Array.isArray(data) && data.uri) dbPut('kv', data.uri, 'nativeFolderUri');
     const keep = lib.filter(s=>s.src!=='native');
     lib.length = 0; lib.push(...keep);
     const fresh = [];
