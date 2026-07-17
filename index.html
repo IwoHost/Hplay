@@ -2113,6 +2113,7 @@ function scroll(dir, mult){
   clickSound();
   mult = mult || 1;
   const sc = cur();
+  if(pendingMedia){ permAskSel = Math.max(0, Math.min(1, permAskSel+dir)); renderPermAsk(); return; }
   if(sc.type==='extapp'){
     const ifr = document.getElementById('extframe');
     if(ifr && ifr.contentWindow) ifr.contentWindow.postMessage({channel:'hplay', type:'wheel', dir, mult}, '*');
@@ -2133,7 +2134,6 @@ function scroll(dir, mult){
     render();
     return;
   }
-  if(pendingMedia){ permAskSel = Math.max(0, Math.min(1, permAskSel+dir)); renderPermAsk(); return; }
   if(sc.type==='confirmdel'){ sc.sel = Math.max(0, Math.min(1, (sc.sel||0)+dir)); render(); return; }
   if(sc.type==='quiz'){ quizScroll(dir); return; }
   if(sc.type==='songs' && sc.reordering && sc.filter && sc.filter.album){
@@ -2166,6 +2166,7 @@ function scroll(dir, mult){
 function select(){
   ensureAC(); clickSound('select');
   const sc = cur();
+  if(pendingMedia){ (permAskSel===1?permYes:permNo)(); return; }
   if(sc.type==='extapp'){
     const ifr = document.getElementById('extframe');
     if(ifr && ifr.contentWindow) ifr.contentWindow.postMessage({channel:'hplay', type:'select'}, '*');
@@ -2178,7 +2179,6 @@ function select(){
     npMode = npMode===0 ? 1 : (npMode===1 && hasLyrics ? 2 : 0);
     render(); return;
   }
-  if(pendingMedia){ (permAskSel===1?permYes:permNo)(); return; }
   if(sc.type==='confirmdel'){ (sc.sel===1?delYes:delNo)(); return; }
   if(sc.type==='quiz'){ quizAnswer(); return; }
   if(sc.type==='songs' && sc.reordering){ sc.reordering=false; toast('Order saved'); render(); return; }
