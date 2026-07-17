@@ -1715,12 +1715,14 @@ function screenDef(sc){
       {lab:'Engraving…', val: custom.engraving||'None', act(){ openTextEntry('Engraving', custom.engraving||'', (n)=>{ custom.engraving=n.trim().slice(0,40); applyCustom(); saveSettings(); render(); }); }},
       {lab:'Name…', val: custom.devName, act(){ openTextEntry('Name your Hplay', custom.devName, (n)=>{ if(n&&n.trim()){ custom.devName=n.trim().slice(0,20); saveSettings(); } render(); }); }},
     ]};
-    case 'colors': return {title:'Body Color', items: allThemeNames().map(n=>(
-      {lab:n, val: n===themeName?'✓':'', act(){ applyTheme(n); saveSettings(); render(); }}
-    ))};
-    case 'wcolors': return {title:'Wheel Color', items: ['Match',...allThemeNames()].map(n=>(
-      {lab:n, val: n===wheelName?'✓':'', act(){ applyWheelColor(n); saveSettings(); render(); }}
-    ))};
+    case 'colors': return {title:'Body Color', items: [
+      ...allThemeNames().map(n=>({lab:n, val: n===themeName?'✓':'', act(){ applyTheme(n); saveSettings(); render(); }})),
+      {lab:'Get More Themes…', arrow:true, act(){ openStoreThemes(); }},
+    ]};
+    case 'wcolors': return {title:'Wheel Color', items: [
+      ...['Match',...allThemeNames()].map(n=>({lab:n, val: n===wheelName?'✓':'', act(){ applyWheelColor(n); saveSettings(); render(); }})),
+      {lab:'Get More Themes…', arrow:true, act(){ openStoreThemes(); }},
+    ]};
     case 'settings': return {title:'Settings', items:[
       {lab:'Shuffle', val: settings.shuffle?'Songs':'Off', act(){ settings.shuffle=!settings.shuffle; saveSettings(); render(); }},
       {lab:'Repeat',  val: settings.repeat, act(){ settings.repeat = settings.repeat==='Off'?'One':settings.repeat==='One'?'All':'Off'; saveSettings(); render(); }},
@@ -1765,15 +1767,10 @@ function screenDef(sc){
         lab:a.name, arrow:true, market:true, iconLetter:(a.name||'?').trim().slice(0,1).toUpperCase(), extId:a.id,
         act(){ stack.push({type:'extapp', extId:a.id}); render(); }
       })),
-      {lab:'Get More…', arrow:true, go:{type:'store', sel:0, top:0}},
+      {lab:'Get More…', arrow:true, act(){ openStoreApps(); }},
     ] : [
       {lab:'No apps yet', dim:true},
-      {lab:'Get More…', arrow:true, go:{type:'store', sel:0, top:0}},
-    ]};
-    case 'store': return {title:'Get More', items:[
-      {lab:'Browse Apps', arrow:true, act(){ openStoreApps(); }},
-      {lab:'Browse Themes', arrow:true, act(){ openStoreThemes(); }},
-      {lab:'Browse Decals', arrow:true, act(){ openStoreDecals(); }},
+      {lab:'Get More…', arrow:true, act(){ openStoreApps(); }},
     ]};
     case 'storeapps': {
       if(market.appsErr) return {title:'Browse Apps', items:[{lab:'Couldn’t load: '+market.appsErr, dim:true}]};
@@ -1807,7 +1804,11 @@ function screenDef(sc){
       ...extDecals.map(d=>({
         lab:d.name, val: d.hidden?'Hidden':'Shown', arrow:true, go:{type:'decalview', decalId:d.id, sel:0, top:0}
       })),
-    ] : [{lab:'No decals installed', dim:true}]};
+      {lab:'Get More Decals…', arrow:true, act(){ openStoreDecals(); }},
+    ] : [
+      {lab:'No decals installed', dim:true},
+      {lab:'Get More Decals…', arrow:true, act(){ openStoreDecals(); }},
+    ]};
     case 'decalview': {
       const d = extDecals.find(x=>x.id===sc.decalId);
       return {title: d?d.name:'Decal', items:[
@@ -2177,8 +2178,8 @@ function scroll(dir, mult){
   const atEdge = (dir>0 && sc.sel===def.items.length-1) || (dir<0 && sc.sel===0);
   sc.sel = Math.max(0, Math.min(def.items.length-1, sc.sel + dir*mult));
   if(atEdge && navigator.vibrate) navigator.vibrate([2,14,2]);
-  if(sc.type==='colors'){ applyTheme(Object.keys(THEMES)[sc.sel]); saveSettings(); }        // live preview
-  if(sc.type==='wcolors'){ applyWheelColor(['Match',...Object.keys(THEMES)][sc.sel]); saveSettings(); }
+  if(sc.type==='colors'){ const n=allThemeNames()[sc.sel]; if(n){ applyTheme(n); saveSettings(); } }        // live preview
+  if(sc.type==='wcolors'){ const n=['Match',...allThemeNames()][sc.sel]; if(n){ applyWheelColor(n); saveSettings(); } }
   if(def.items.length > 25){ const lab=(def.items[sc.sel].lab||'').trim(); showLetter((lab[0]||'').toUpperCase()); }
   render();
 }
