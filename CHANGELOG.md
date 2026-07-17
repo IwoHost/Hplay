@@ -2,6 +2,15 @@
 
 Notable changes to Hplay.
 
+## Click wheel in apps
+
+- Installed apps (Get More → Apps) now receive click-wheel input: turning the
+  wheel and pressing the center button are forwarded into the app instead of
+  requiring touch. The [hplay-market](https://github.com/iwohost/hplay-market)
+  apps (Dice Roller, Library & Stats, Mashup) were updated to use it, and a
+  new **Metronome** app was added, built around dialing in a tempo with the
+  wheel.
+
 ## Get More (marketplace)
 
 - Point Settings → Customize → Get More → Marketplace URL at a site hosting a
