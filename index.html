@@ -1573,7 +1573,7 @@ function screenDef(sc){
       const counts = {};
       lib.forEach(s=>{ counts[s.album] = (counts[s.album]||0)+1; });
       const als = [...new Set(lib.map(s=>s.album))].filter(a=>counts[a] >= 2).sort((a,b)=>a.localeCompare(b));
-      return {title:'Playlists', items: als.length ? als.map(a=>({lab:a, arrow:true, go:{type:'songs', sel:0, top:0, filter:{album:a}}})) : [{lab:'No Playlists', dim:true}]};
+      return {title:'Playlists', items: als.length ? als.map(a=>({lab:a, arrow:true, playlistName:a, go:{type:'songs', sel:0, top:0, filter:{album:a}}})) : [{lab:'No Playlists', dim:true}]};
     }
     case 'custom': return {title:'Customize', items:[
       {lab:'Body Color', arrow:true, val:themeName, go:{type:'colors', sel:allThemeNames().indexOf(themeName), top:0}},
@@ -2079,6 +2079,7 @@ function untiltFace(){ if($face){ $face.style.transition=''; $face.style.transfo
 
 function currentRowSongId(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.songId:undefined; }
 function currentRowExtId(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.extId:undefined; }
+function currentRowPlaylistName(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.playlistName:undefined; }
 function goHome(){ if(arranging) exitArrangeMode(); npMode=0; stack.length=1; stack[0]={type:'main', sel:0, top:0}; render(); }
 function openSleep(){ stack.push({type:'sleeptimer', sel:0, top:0}); render(); }
 function openDelete(id, kind){
@@ -2096,14 +2097,12 @@ function delNo(){ if(cur().type==='confirmdel'){ stack.pop(); render(); } }
 // which hold action (if any) applies to where the finger is pressing
 function holdActionFor(x,y,r){
   if(dist(x,y,r) < 0.4){
-    const sc = cur();
     const songId = currentRowSongId();
-    if(songId!=null){
-      if(sc.type==='songs' && sc.filter && sc.filter.album) return startReorder;
-      return ()=>openDelete(songId,'song');
-    }
+    if(songId!=null) return ()=>openDelete(songId,'song');
     const eid = currentRowExtId();
     if(eid!=null) return ()=>openDelete(eid,'app');
+    const pname = currentRowPlaylistName();
+    if(pname!=null) return ()=>renamePlaylist(pname);
     return null;
   }
   const a = angle(x,y,r);
