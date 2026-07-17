@@ -412,7 +412,7 @@
   .hidden{ display:none !important; }
   .decalLayer{ position:absolute; inset:0; z-index:1; pointer-events:none; overflow:hidden; }
   .decalLayer img{ position:absolute; filter:drop-shadow(0 .3vh .8vh rgba(0,0,0,.35)); }
-  .decalLayer.arranging{ pointer-events:auto; }
+  .decalLayer.arranging{ pointer-events:auto; touch-action:none; }
   .decalLayer.arranging img{
     cursor:grab; touch-action:none;
     outline:1.5px dashed rgba(255,255,255,.75); outline-offset:4px;
@@ -715,7 +715,6 @@ function renderDecalLayer(){
   el.innerHTML = extDecals.filter(d=>!d.hidden).map(d=>
     `<img data-id="${d.id}" src="${d.url}" style="left:${d.x}%;top:${d.y}%;width:${d.w}vw;transform:translate(-50%,-50%) rotate(${d.rot}deg);">`
   ).join('');
-  if(arranging) el.querySelectorAll('img').forEach(img=>img.addEventListener('pointerdown', onDecalPointerDown));
 }
 
 /* ---------- arranging decals: drag to move, pinch to resize+rotate, right on the device body ---------- */
@@ -752,11 +751,19 @@ function applyDecalTransform(d){
 }
 function onDecalPointerDown(e){
   if(!arranging) return;
+  let id;
+  if(activeDecalDrag){
+    id = activeDecalDrag.id;   // a second finger joining a gesture already in progress (pinch)
+  } else {
+    const hit = e.target.closest && e.target.closest('img[data-id]');
+    if(!hit) return;
+    id = hit.dataset.id;
+  }
   e.stopPropagation();
-  const img = e.currentTarget, id = img.dataset.id;
-  try{ img.setPointerCapture(e.pointerId); }catch(err){}
-  decalPointers.set(e.pointerId, {x:e.clientX, y:e.clientY, img, id});
-  img.classList.add('dragging');
+  try{ e.currentTarget.setPointerCapture(e.pointerId); }catch(err){}
+  decalPointers.set(e.pointerId, {x:e.clientX, y:e.clientY, id});
+  const img = document.querySelector('.decalLayer img[data-id="'+CSS.escape(id)+'"]');
+  if(img) img.classList.add('dragging');
   const d = extDecals.find(x=>x.id===id); if(!d) return;
   const forThis = [...decalPointers.values()].filter(p=>p.id===id);
   if(forThis.length>=2){
@@ -768,9 +775,6 @@ function onDecalPointerDown(e){
   } else {
     activeDecalDrag = { id, mode:'drag', lastX:e.clientX, lastY:e.clientY };
   }
-  img.addEventListener('pointermove', onDecalPointerMove);
-  img.addEventListener('pointerup', onDecalPointerUp);
-  img.addEventListener('pointercancel', onDecalPointerUp);
 }
 function onDecalPointerMove(e){
   if(!activeDecalDrag) return;
@@ -797,7 +801,11 @@ function onDecalPointerMove(e){
 function onDecalPointerUp(e){
   const p = decalPointers.get(e.pointerId);
   decalPointers.delete(e.pointerId);
-  if(p && p.img){ p.img.classList.remove('dragging'); try{ p.img.releasePointerCapture(e.pointerId); }catch(err){} }
+  if(p){
+    const img = document.querySelector('.decalLayer img[data-id="'+CSS.escape(p.id)+'"]');
+    if(img && ![...decalPointers.values()].some(pp=>pp.id===p.id)) img.classList.remove('dragging');
+  }
+  try{ e.currentTarget.releasePointerCapture(e.pointerId); }catch(err){}
   if(!activeDecalDrag) return;
   const remaining = [...decalPointers.values()].filter(pp=>pp.id===activeDecalDrag.id);
   const d = extDecals.find(x=>x.id===activeDecalDrag.id);
@@ -808,6 +816,13 @@ function onDecalPointerUp(e){
     activeDecalDrag = { id:activeDecalDrag.id, mode:'drag', lastX:remaining[0].x, lastY:remaining[0].y };
   }
 }
+// bound once on the whole layer (not per-sticker) so a second pinch finger that lands
+// just off a small decal still counts, instead of requiring both touches to hit the image
+const $decalLayer = document.getElementById('decalLayer');
+$decalLayer.addEventListener('pointerdown', onDecalPointerDown);
+$decalLayer.addEventListener('pointermove', onDecalPointerMove);
+$decalLayer.addEventListener('pointerup', onDecalPointerUp);
+$decalLayer.addEventListener('pointercancel', onDecalPointerUp);
 async function installDecal(item){
   if(!item || typeof item.file!=='string'){ toast('Invalid decal'); return; }
   const key = decalKey(item);
