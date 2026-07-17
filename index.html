@@ -1217,7 +1217,10 @@ async function pickFolder(){
       dirHandle = h;
       dbPut('kv', h, 'dirHandle');
       await scanFolder();
-    }catch(e){ /* user cancelled or unsupported quirk */ }
+    }catch(e){
+      if(e && e.name==='AbortError') return;   // user cancelled the picker
+      $folder.click();   // API present but unsupported/broken here - fall back to the file input
+    }
   } else {
     $folder.click();   // fallback: import a whole folder's files into storage
   }
