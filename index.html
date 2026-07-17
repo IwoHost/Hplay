@@ -174,6 +174,17 @@
   }
   .list.greensel .row.sel .val, .list.greensel .row.sel .arrow { color:#eafcea; }
   .list.greensel .row.sel .micon.mono { color:#227a22; background:#fff; }
+  .row.greenrow.sel {
+    background:linear-gradient(180deg,#8ee08a 0%,#4fb022 46%,#227a22 52%,#3a9a3a 100%);
+    color:#fff; text-shadow:0 1px 1px rgba(0,40,0,.35);
+  }
+  .row.greenrow.sel .val, .row.greenrow.sel .arrow { color:#eafcea; }
+  .texten{
+    width:80%; text-align:center; font-family:inherit; font-size:calc(var(--su)*12); font-weight:700;
+    color:#15181d; background:#eef0f3; border:1px solid #c6cad0; border-radius:calc(var(--su)*3);
+    padding:calc(var(--su)*4) calc(var(--su)*5); outline:none; -webkit-appearance:none; appearance:none;
+  }
+  body.darkui .texten{ background:#1c1f25; color:#e8ebf0; border-color:#05060a; }
   .row.correct {
     background:linear-gradient(180deg,#8ee08a 0%,#4fb022 46%,#227a22 52%,#3a9a3a 100%);
     color:#fff; text-shadow:0 1px 1px rgba(0,40,0,.35);
@@ -1588,22 +1599,48 @@ function listOf(filter){
   }
   return ids;
 }
-function startReorder(){
-  const sc = cur(); if(sc.type!=='songs' || !sc.filter || !sc.filter.album) return;
-  sc.reordering = true;
-  if(navigator.vibrate) navigator.vibrate(14);
-  toast('Rotate to move · tap to drop');
-  render();
-}
-function renamePlaylist(oldName){
-  const n = prompt('Rename Playlist', oldName);
-  if(n==null) return;
-  const newName = n.trim().slice(0,60);
+function renamePlaylistTo(oldName, newName){
+  newName = String(newName||'').trim().slice(0,60);
   if(!newName || newName===oldName) return;
   lib.forEach(s=>{ if(s.album===oldName){ s.album = newName; if(s._blob) saveSong(s); } });
   if(playlistOrder[oldName]){ playlistOrder[newName] = playlistOrder[oldName]; delete playlistOrder[oldName]; savePlaylistOrder(); }
-  const sc = cur(); if(sc.filter && sc.filter.album===oldName) sc.filter.album = newName;
+  stack.forEach(sc=>{ if(sc.filter && sc.filter.album===oldName) sc.filter.album = newName; });
   toast('Renamed to '+newName);
+}
+function renamePlaylist(oldName){
+  openTextEntry('Rename Playlist', oldName, (newName)=>{ renamePlaylistTo(oldName, newName); render(); });
+}
+function enterReorderFor(album){
+  back();   // drop the Edit Playlist screen, back onto the song list
+  const sc = cur();
+  if(sc.type==='songs' && sc.filter && sc.filter.album===album){
+    sc.reordering = true;
+    if(listOf(sc.filter).length) sc.sel = 1;   // land on the first song, not the Edit Playlist row
+    if(navigator.vibrate) navigator.vibrate(14);
+    toast('Rotate to move · press center to drop');
+    render();
+  }
+}
+/* ---------- custom on-screen text entry (replaces the browser's native prompt()) ---------- */
+let textEntryState = null;
+function openTextEntry(title, initial, onSave){
+  textEntryState = { title, value: initial||'', onSave };
+  stack.push({type:'textentry', sel:0});
+  render();
+}
+function textEntrySave(){
+  if(!textEntryState) return;
+  const inp = document.getElementById('textEntryInput');
+  const val = inp ? inp.value : textEntryState.value;
+  const cb = textEntryState.onSave;
+  textEntryState = null;
+  stack.pop();
+  if(cb) cb(val);
+  render();
+}
+function textEntryCancel(){
+  textEntryState = null;
+  stack.pop();
   render();
 }
 function songPreviewHTML(){
@@ -1651,9 +1688,17 @@ function screenDef(sc){
       const isPlaylist = !!sc.filter?.album;
       const songItems = ids.length ? ids.map(id=>({lab:dispTitle(song(id).title), songId:id, act(){ buildPlaylist(ids, id, label); stack.push({type:'np'}); render(); }}))
                                     : [{lab:'No Music', dim:true}];
-      const items = isPlaylist ? [{lab:'Rename Playlist…', act(){ renamePlaylist(sc.filter.album); }}, ...songItems] : songItems;
+      const items = isPlaylist ? [{lab:'Edit Playlist…', arrow:true, greenrow:true, go:{type:'playlistedit', sel:0, top:0, filter:{album:sc.filter.album}}}, ...songItems] : songItems;
       return {title: sc.filter?.artist || sc.filter?.album || 'Songs', items};
     }
+    case 'playlistedit': {
+      const album = sc.filter.album;
+      return {title:'Edit Playlist', items:[
+        {lab:'Rename…', act(){ openTextEntry('Rename Playlist', album, (newName)=>{ renamePlaylistTo(album, newName); back(); }); }},
+        {lab:'Reorder Songs…', act(){ enterReorderFor(album); }},
+      ]};
+    }
+    case 'textentry': return {title: textEntryState ? textEntryState.title : 'Edit', textentry:true};
     case 'albums': {
       const counts = {};
       lib.forEach(s=>{ counts[s.album] = (counts[s.album]||0)+1; });
@@ -1667,8 +1712,8 @@ function screenDef(sc){
       {lab:'Wheel Size', val: custom.wheelSize, act(){ const o=Object.keys(WHEEL_SIZES); custom.wheelSize=o[(o.indexOf(custom.wheelSize)+1)%o.length]; applyCustom(); saveSettings(); render(); }},
       {lab:'Art Motion', val: custom.sway?'On':'Off', act(){ custom.sway=!custom.sway; applyCustom(); saveSettings(); render(); }},
       {lab:'Decals', arrow:true, go:{type:'decalsmanage', sel:0, top:0}},
-      {lab:'Engraving…', val: custom.engraving||'None', act(){ const n=prompt('Engrave a short message', custom.engraving||''); if(n!=null){ custom.engraving=n.trim().slice(0,40); applyCustom(); saveSettings(); render(); } }},
-      {lab:'Name…', val: custom.devName, act(){ const n=prompt('Name your Hplay', custom.devName); if(n&&n.trim()){ custom.devName=n.trim().slice(0,20); saveSettings(); render(); } }},
+      {lab:'Engraving…', val: custom.engraving||'None', act(){ openTextEntry('Engraving', custom.engraving||'', (n)=>{ custom.engraving=n.trim().slice(0,40); applyCustom(); saveSettings(); render(); }); }},
+      {lab:'Name…', val: custom.devName, act(){ openTextEntry('Name your Hplay', custom.devName, (n)=>{ if(n&&n.trim()){ custom.devName=n.trim().slice(0,20); saveSettings(); } render(); }); }},
     ]};
     case 'colors': return {title:'Body Color', items: allThemeNames().map(n=>(
       {lab:n, val: n===themeName?'✓':'', act(){ applyTheme(n); saveSettings(); render(); }}
@@ -1789,7 +1834,7 @@ function screenDef(sc){
       return {title:'Stopwatch', stopwatch:true, items};
     }
     case 'notes': return {title:'Notes', items:[
-      {lab:'Add Note…', act(){ const t=prompt('New note'); if(t && t.trim()){ addNote(t.trim()); render(); } }},
+      {lab:'Add Note…', act(){ openTextEntry('New Note', '', (t)=>{ if(t && t.trim()){ addNote(t.trim()); } render(); }); }},
       ...(notes.length ? notes.map(n=>({lab:noteSummary(n), arrow:true, go:{type:'noteview', noteId:n.id, sel:0, top:0}}))
                        : [{lab:'No Notes', dim:true}]),
     ]};
@@ -1930,6 +1975,26 @@ function render(){
     html += nowlineHTML();
     $screen.innerHTML = html; return;
   }
+  if(def.textentry){
+    const st = textEntryState || {value:''};
+    html += `<div class="content"><div class="confirm">
+      <input id="textEntryInput" class="texten" type="text" value="${esc(st.value)}" maxlength="60" autocomplete="off" autocorrect="off" spellcheck="false">
+      <div class="cfmbtns"><div class="cfmbtn" id="teCancel">Cancel</div><div class="cfmbtn sel" id="teSave">Save</div></div>
+    </div></div>`;
+    $screen.innerHTML = html;
+    const inp = document.getElementById('textEntryInput');
+    if(inp){
+      inp.addEventListener('keydown', e=>{
+        e.stopPropagation();
+        if(e.key==='Enter'){ e.preventDefault(); textEntrySave(); }
+        else if(e.key==='Escape'){ textEntryCancel(); }
+      });
+      setTimeout(()=>{ inp.focus(); inp.select(); }, 30);
+    }
+    document.getElementById('teCancel')?.addEventListener('click', textEntryCancel);
+    document.getElementById('teSave')?.addEventListener('click', textEntrySave);
+    return;
+  }
   if(def.stats){
     const items = buildStatsItems();
     const rows = items.map(it=>`<div class="row dim"><span class="lab">${esc(it.lab)}</span><span class="val">${esc(it.val)}</span></div>`).join('');
@@ -2012,7 +2077,7 @@ function render(){
       it.swatch  ? `<span class="micon swatch">${it.swatch.map(c=>`<i style="background:${esc(c)}"></i>`).join('')}</span>` :
       it.iconLetter ? `<span class="micon mono">${esc(it.iconLetter)}</span>` : '';
     const valCls = it.badge ? 'val badge'+(/Installed|Applied/.test(it.val||'')?' on':'') : 'val';
-    rows += `<div class="row ${i===sc.sel?'sel':''} ${it.dim?'dim':''} ${it.danger?'danger':''} ${it.market?'market':''}">
+    rows += `<div class="row ${i===sc.sel?'sel':''} ${it.dim?'dim':''} ${it.danger?'danger':''} ${it.market?'market':''} ${it.greenrow?'greenrow':''}">
       ${icon}
       <span class="lab">${esc(it.lab)}</span>
       ${it.val?`<span class="${valCls}">${esc(it.val)}</span>`:''}
@@ -2093,7 +2158,7 @@ function scroll(dir, mult){
   if(sc.type==='songs' && sc.reordering && sc.filter && sc.filter.album){
     const album = sc.filter.album;
     const ids = listOf(sc.filter);
-    const offset = 1; // the "Rename Playlist…" row above the song list
+    const offset = 1; // the "Edit Playlist…" row above the song list
     const from = sc.sel - offset;
     const to = Math.max(0, Math.min(ids.length-1, from + dir*mult));
     if(from>=0 && to!==from){
@@ -2125,6 +2190,7 @@ function select(){
     if(ifr && ifr.contentWindow) ifr.contentWindow.postMessage({channel:'hplay', type:'select'}, '*');
     return;
   }
+  if(sc.type==='textentry'){ textEntrySave(); return; }
   if(sc.type==='np'){
     const s = nowSong();
     const hasLyrics = s && (s.sylt || s.lyricsText);
@@ -2145,6 +2211,7 @@ function back(){
   ensureAC(); clickSound();
   if(pendingMedia){ permNo(); return; }
   if(arranging){ exitArrangeMode(); return; }
+  if(cur().type==='textentry'){ textEntryCancel(); return; }
   if(stack.length>1){ npMode=0; stack.pop(); render(); }
 }
 function playPause(){
