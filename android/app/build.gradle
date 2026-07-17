@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.hostlab.hplay'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.hostlab.hplay"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file(System.getenv("HPLAY_KEYSTORE") ?: "hplay-release.keystore")
+            storePassword System.getenv("HPLAY_KEYSTORE_PASSWORD") ?: "hplaysigning"
+            keyAlias System.getenv("HPLAY_KEY_ALIAS") ?: "hplay"
+            keyPassword System.getenv("HPLAY_KEY_PASSWORD") ?: "hplaysigning"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
