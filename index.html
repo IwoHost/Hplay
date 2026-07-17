@@ -1209,9 +1209,10 @@ function readTags(f){
     }catch(e){ res(base); }
   });
 }
+const IN_WRAPPER = /HplayApp/.test(navigator.userAgent);
 async function pickFolder(){
   if(NATIVE){ Android.pickFolder(); return; }
-  if(window.showDirectoryPicker){
+  if(window.showDirectoryPicker && !IN_WRAPPER){
     try{
       const h = await window.showDirectoryPicker({ id:'hplay-music', startIn:'music', mode:'read' });
       dirHandle = h;
