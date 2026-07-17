@@ -995,6 +995,7 @@ function saveSettings(){
                 sleepEnd:sleepEndMode, fadeSec:fadeSec }, 'settings');
 }
 async function eraseAll(){
+  if(arranging) exitArrangeMode();
   await dbClear('songs'); await dbClear('kv'); await dbClear('tags');
   await dbClear('extapps'); await dbClear('extthemes'); await dbClear('extdecals');
   dirHandle = null; folderNeedsTap = false; excluded.clear();
@@ -2045,6 +2046,7 @@ function select(){
 }
 function back(){
   ensureAC(); clickSound();
+  if(arranging){ exitArrangeMode(); return; }
   if(stack.length>1){ npMode=0; stack.pop(); render(); }
 }
 function playPause(){
@@ -2077,7 +2079,7 @@ function untiltFace(){ if($face){ $face.style.transition=''; $face.style.transfo
 
 function currentRowSongId(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.songId:undefined; }
 function currentRowExtId(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.extId:undefined; }
-function goHome(){ npMode=0; stack.length=1; stack[0]={type:'main', sel:0, top:0}; render(); }
+function goHome(){ if(arranging) exitArrangeMode(); npMode=0; stack.length=1; stack[0]={type:'main', sel:0, top:0}; render(); }
 function openSleep(){ stack.push({type:'sleeptimer', sel:0, top:0}); render(); }
 function openDelete(id, kind){
   kind = kind||'song';
