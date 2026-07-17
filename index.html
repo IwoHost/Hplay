@@ -168,6 +168,12 @@
     background:linear-gradient(180deg,#f0847e 0%,#e0433a 46%,#c62015 52%,#d13a2f 100%);
     color:#fff;
   }
+  .list.greensel .row.sel {
+    background:linear-gradient(180deg,#8ee08a 0%,#4fb022 46%,#227a22 52%,#3a9a3a 100%);
+    color:#fff; text-shadow:0 1px 1px rgba(0,40,0,.35);
+  }
+  .list.greensel .row.sel .val, .list.greensel .row.sel .arrow { color:#eafcea; }
+  .list.greensel .row.sel .micon.mono { color:#227a22; background:#fff; }
   .row.correct {
     background:linear-gradient(180deg,#8ee08a 0%,#4fb022 46%,#227a22 52%,#3a9a3a 100%);
     color:#fff; text-shadow:0 1px 1px rgba(0,40,0,.35);
@@ -999,6 +1005,7 @@ async function eraseAll(){
   extThemes.length = 0;
   extDecals.forEach(d=>{ if(d.url){ try{ URL.revokeObjectURL(d.url); }catch(e){} } });
   extDecals.length = 0;
+  playlistOrder = {}; savePlaylistOrder();
   renderDecalLayer();
   market.apps = market.themes = market.decals = null; market.appsErr = market.themesErr = market.decalsErr = null;
   stack.length = 1; stack[0] = {type:'main', sel:0, top:0};
@@ -1013,6 +1020,7 @@ async function eraseAll(){
 async function restore(){
   try{ extApps = await dbAll('extapps'); }catch(e){ extApps = []; }
   try{ extThemes = await dbAll('extthemes'); }catch(e){ extThemes = []; }
+  try{ playlistOrder = (await dbGet('kv','playlistOrder')) || {}; }catch(e){ playlistOrder = {}; }
   try{
     const drows = await dbAll('extdecals');
     extDecals = drows.map(d=>Object.assign({}, d, { url:URL.createObjectURL(d.blob) }));
@@ -1475,11 +1483,42 @@ function goFull(){
 document.addEventListener('pointerdown', goFull, {passive:true});
 
 /* ---------- screens ---------- */
+// custom per-playlist song order: { albumName: [songId, ...] }, overrides the default alpha order
+let playlistOrder = {};
+function savePlaylistOrder(){ dbPut('kv', playlistOrder, 'playlistOrder'); }
 function listOf(filter){
   let ids = lib.map(s=>s.id);
   if(filter?.artist) ids = lib.filter(s=>s.artist===filter.artist).map(s=>s.id);
-  if(filter?.album)  ids = lib.filter(s=>s.album===filter.album).map(s=>s.id);
+  if(filter?.album){
+    const matching = lib.filter(s=>s.album===filter.album).map(s=>s.id);
+    const order = playlistOrder[filter.album];
+    if(order && order.length){
+      const ordered = order.filter(id=>matching.includes(id));
+      const missing = matching.filter(id=>!ordered.includes(id));
+      ids = [...ordered, ...missing];
+    } else {
+      ids = matching;
+    }
+  }
   return ids;
+}
+function startReorder(){
+  const sc = cur(); if(sc.type!=='songs' || !sc.filter || !sc.filter.album) return;
+  sc.reordering = true;
+  if(navigator.vibrate) navigator.vibrate(14);
+  toast('Rotate to move · tap to drop');
+  render();
+}
+function renamePlaylist(oldName){
+  const n = prompt('Rename Playlist', oldName);
+  if(n==null) return;
+  const newName = n.trim().slice(0,60);
+  if(!newName || newName===oldName) return;
+  lib.forEach(s=>{ if(s.album===oldName){ s.album = newName; if(s._blob) saveSong(s); } });
+  if(playlistOrder[oldName]){ playlistOrder[newName] = playlistOrder[oldName]; delete playlistOrder[oldName]; savePlaylistOrder(); }
+  const sc = cur(); if(sc.filter && sc.filter.album===oldName) sc.filter.album = newName;
+  toast('Renamed to '+newName);
+  render();
 }
 function songPreviewHTML(){
   const sc = cur();
@@ -1503,6 +1542,7 @@ function screenDef(sc){
         {lab:'Music', arrow:true, go:{type:'music', sel:0, top:0}},
         {lab:'Shuffle Songs', act(){ if(lib.length){ const ids=lib.map(s=>s.id); const st=ids[Math.floor(Math.random()*ids.length)]; const keep=settings.shuffle; settings.shuffle=true; buildPlaylist(ids,st,'All Songs'); settings.shuffle=keep; stack.push({type:'np'}); render(); } }},
         {lab:'Extras', arrow:true, go:{type:'extras', sel:0, top:0}},
+        {lab:'Apps', arrow:true, go:{type:'apps', sel:0, top:0}},
         {lab:'Settings', arrow:true, go:{type:'settings', sel:0, top:0}},
       ];
       if(folderNeedsTap) items.unshift({lab:'Load Music Folder', act(){ (async()=>{ try{ const p = await dirHandle.requestPermission({mode:'read'}); if(p==='granted') await scanFolder(); }catch(e){} })(); }});
@@ -1522,9 +1562,11 @@ function screenDef(sc){
     case 'songs': {
       const ids = listOf(sc.filter);
       const label = sc.filter?.artist || sc.filter?.album || 'All Songs';
-      return {title: sc.filter?.artist || sc.filter?.album || 'Songs',
-        items: ids.length ? ids.map(id=>({lab:dispTitle(song(id).title), songId:id, act(){ buildPlaylist(ids, id, label); stack.push({type:'np'}); render(); }}))
-                          : [{lab:'No Music', dim:true}]};
+      const isPlaylist = !!sc.filter?.album;
+      const songItems = ids.length ? ids.map(id=>({lab:dispTitle(song(id).title), songId:id, act(){ buildPlaylist(ids, id, label); stack.push({type:'np'}); render(); }}))
+                                    : [{lab:'No Music', dim:true}];
+      const items = isPlaylist ? [{lab:'Rename Playlist…', act(){ renamePlaylist(sc.filter.album); }}, ...songItems] : songItems;
+      return {title: sc.filter?.artist || sc.filter?.album || 'Songs', items};
     }
     case 'albums': {
       const counts = {};
@@ -1553,7 +1595,6 @@ function screenDef(sc){
       {lab:'Repeat',  val: settings.repeat, act(){ settings.repeat = settings.repeat==='Off'?'One':settings.repeat==='One'?'All':'Off'; saveSettings(); render(); }},
       {lab:'Clicker', val: settings.clicker?'On':'Off', act(){ settings.clicker=!settings.clicker; saveSettings(); render(); }},
       {lab:'Sleep Timer', val: sleepMin?fmtClock(sleepRemaining()):'Off', arrow:true, go:{type:'sleeptimer', sel:0, top:0}},
-      {lab:'Customize', arrow:true, go:{type:'custom', sel:0, top:0}},
       {lab:'About', arrow:true, go:{type:'about'}},
       {lab:'Erase Everything', danger:true, act(){ eraseAll(); }},
     ]};
@@ -1586,7 +1627,16 @@ function screenDef(sc){
       {lab:'Music Quiz', arrow:true, act(){ quiz = null; stack.push({type:'quiz'}); startQuizQuestion(); }},
       {lab:'Notes', arrow:true, go:{type:'notes', sel:0, top:0}},
       {lab:'Statistics', arrow:true, go:{type:'stats'}},
-      ...extApps.map(a=>({lab:a.name, arrow:true, go:{type:'extappview', extId:a.id, sel:0, top:0}})),
+      {lab:'Customize', arrow:true, go:{type:'custom', sel:0, top:0}},
+    ]};
+    case 'apps': return {title:'Apps', greenSel:true, items: extApps.length ? [
+      ...extApps.map(a=>({
+        lab:a.name, arrow:true, market:true, iconLetter:(a.name||'?').trim().slice(0,1).toUpperCase(), extId:a.id,
+        act(){ stack.push({type:'extapp', extId:a.id}); render(); }
+      })),
+      {lab:'Get More…', arrow:true, go:{type:'store', sel:0, top:0}},
+    ] : [
+      {lab:'No apps yet', dim:true},
       {lab:'Get More…', arrow:true, go:{type:'store', sel:0, top:0}},
     ]};
     case 'store': return {title:'Get More', items:[
@@ -1632,13 +1682,6 @@ function screenDef(sc){
       return {title: d?d.name:'Decal', items:[
         {lab: d&&d.hidden ? 'Show' : 'Hide', act(){ toggleDecalHidden(sc.decalId); render(); }},
         {lab:'Remove', danger:true, act(){ removeDecal(sc.decalId); back(); }},
-      ]};
-    }
-    case 'extappview': {
-      const a = extApps.find(x=>x.id===sc.extId);
-      return {title: a?a.name:'App', items:[
-        {lab:'Open', act(){ stack.push({type:'extapp', extId:sc.extId}); render(); }},
-        {lab:'Uninstall', danger:true, act(){ uninstallExt(sc.extId); back(); }},
       ]};
     }
     case 'extapp': {
@@ -1781,13 +1824,22 @@ function render(){
   }
 
   if(def.confirm){
-    const s = song(sc.songId), selD = sc.sel||0;
-    const art = s&&s.art ? `<div class="cfmart" style="background-image:url('${s.art}')"></div>` : `<div class="cfmart blank">\u266a</div>`;
+    const selD = sc.sel||0;
+    let art, nm;
+    if(sc.kind==='app'){
+      const a = extApps.find(x=>x.id===sc.extId);
+      nm = a ? a.name : '';
+      art = `<div class="cfmart blank">${esc((nm||'?').trim().slice(0,1).toUpperCase())}</div>`;
+    } else {
+      const s = song(sc.songId);
+      nm = s ? dispTitle(s.title) : '';
+      art = s&&s.art ? `<div class="cfmart" style="background-image:url('${s.art}')"></div>` : `<div class="cfmart blank">\u266a</div>`;
+    }
     html += `<div class="content"><div class="confirm">
-      <div class="ttl">Delete?</div>
+      <div class="ttl">${sc.kind==='app' ? 'Uninstall?' : 'Delete?'}</div>
       ${art}
-      <div class="nm">${esc(s?dispTitle(s.title):'')}</div>
-      <div class="cfmbtns"><div class="cfmbtn ${selD===0?'sel':''}">Keep</div><div class="cfmbtn del ${selD===1?'sel':''}">Delete</div></div>
+      <div class="nm">${esc(nm)}</div>
+      <div class="cfmbtns"><div class="cfmbtn ${selD===0?'sel':''}">Keep</div><div class="cfmbtn del ${selD===1?'sel':''}">${sc.kind==='app'?'Uninstall':'Delete'}</div></div>
     </div></div>`;
     html += nowlineHTML();
     $screen.innerHTML = html; return;
@@ -1906,7 +1958,7 @@ function render(){
       <div class="list">${rows}</div>
     </div>`;
   } else {
-    html += `<div class="content"><div class="list"${listStyle}>${rows}</div>${pane}</div>`;
+    html += `<div class="content"><div class="list${def.greenSel?' greensel':''}"${listStyle}>${rows}</div>${pane}</div>`;
   }
   html += nowlineHTML();
   $screen.innerHTML = html;
@@ -1946,6 +1998,23 @@ function scroll(dir, mult){
   }
   if(sc.type==='confirmdel'){ sc.sel = Math.max(0, Math.min(1, (sc.sel||0)+dir)); render(); return; }
   if(sc.type==='quiz'){ quizScroll(dir); return; }
+  if(sc.type==='songs' && sc.reordering && sc.filter && sc.filter.album){
+    const album = sc.filter.album;
+    const ids = listOf(sc.filter);
+    const offset = 1; // the "Rename Playlist…" row above the song list
+    const from = sc.sel - offset;
+    const to = Math.max(0, Math.min(ids.length-1, from + dir*mult));
+    if(from>=0 && to!==from){
+      const [moved] = ids.splice(from, 1);
+      ids.splice(to, 0, moved);
+      playlistOrder[album] = ids;
+      savePlaylistOrder();
+      sc.sel = to + offset;
+      if(navigator.vibrate) navigator.vibrate(6);
+    }
+    render();
+    return;
+  }
   const def = screenDef(sc);
   if(!def.items) return;
   const atEdge = (dir>0 && sc.sel===def.items.length-1) || (dir<0 && sc.sel===0);
@@ -1967,6 +2036,7 @@ function select(){
   }
   if(sc.type==='confirmdel'){ (sc.sel===1?delYes:delNo)(); return; }
   if(sc.type==='quiz'){ quizAnswer(); return; }
+  if(sc.type==='songs' && sc.reordering){ sc.reordering=false; toast('Order saved'); render(); return; }
   const def = screenDef(sc);
   const it = def.items && def.items[sc.sel];
   if(!it) return;
@@ -2006,15 +2076,34 @@ function tiltFace(x,y,r){
 function untiltFace(){ if($face){ $face.style.transition=''; $face.style.transform=''; } }
 
 function currentRowSongId(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.songId:undefined; }
+function currentRowExtId(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.extId:undefined; }
 function goHome(){ npMode=0; stack.length=1; stack[0]={type:'main', sel:0, top:0}; render(); }
 function openSleep(){ stack.push({type:'sleeptimer', sel:0, top:0}); render(); }
-function openDelete(id){ stack.push({type:'confirmdel', songId:id, sel:0}); render(); }
+function openDelete(id, kind){
+  kind = kind||'song';
+  stack.push({type:'confirmdel', kind, songId: kind==='song'?id:undefined, extId: kind==='app'?id:undefined, sel:0});
+  render();
+}
 function fixSel(){ const sc=cur(); if(sc&&typeof sc.sel==='number'){ const it=(screenDef(sc).items||[]); if(sc.sel>=it.length) sc.sel=Math.max(0,it.length-1); } }
-function delYes(){ const sc=cur(); if(sc.type!=='confirmdel') return; const id=sc.songId; stack.pop(); removeSong(id); fixSel(); render(); }
+function delYes(){
+  const sc=cur(); if(sc.type!=='confirmdel') return;
+  if(sc.kind==='app'){ const id=sc.extId; stack.pop(); uninstallExt(id); fixSel(); render(); return; }
+  const id=sc.songId; stack.pop(); removeSong(id); fixSel(); render();
+}
 function delNo(){ if(cur().type==='confirmdel'){ stack.pop(); render(); } }
 // which hold action (if any) applies to where the finger is pressing
 function holdActionFor(x,y,r){
-  if(dist(x,y,r) < 0.4){ const id=currentRowSongId(); return id!=null ? ()=>openDelete(id) : null; }
+  if(dist(x,y,r) < 0.4){
+    const sc = cur();
+    const songId = currentRowSongId();
+    if(songId!=null){
+      if(sc.type==='songs' && sc.filter && sc.filter.album) return startReorder;
+      return ()=>openDelete(songId,'song');
+    }
+    const eid = currentRowExtId();
+    if(eid!=null) return ()=>openDelete(eid,'app');
+    return null;
+  }
   const a = angle(x,y,r);
   if(a>=-135 && a<-45) return goHome;       // hold MENU (top)  -> main menu
   if(a>=45 && a<135)  return openSleep;     // hold play/pause (bottom) -> sleep timer
