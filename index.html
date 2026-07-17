@@ -504,6 +504,7 @@
   </div>
   <input type="file" id="filePick" multiple accept="audio/*">
   <input type="file" id="folderPick" webkitdirectory multiple>
+  <input type="file" id="decalPhotoPick" accept="image/*">
 </div>
 
 <audio id="audio"></audio>
@@ -830,6 +831,19 @@ async function installDecal(item){
     toast('Placed '+rec.name);
     render();
   }catch(e){ toast('Install failed'); }
+}
+function addPhotoDecal(file){
+  const id = 'photo:'+Date.now()+':'+Math.floor(Math.random()*1e6);
+  const rec = {
+    id, name:(file.name||'Photo').replace(/\.[^.]+$/,'').slice(0,30) || 'Photo',
+    blob:file, x:50, y:50, w:16, rot:0, hidden:false
+  };
+  rec.url = URL.createObjectURL(file);
+  extDecals.push(rec);
+  dbPut('extdecals', { id:rec.id, name:rec.name, blob:rec.blob, x:rec.x, y:rec.y, w:rec.w, rot:rec.rot, hidden:rec.hidden });
+  renderDecalLayer();
+  toast('Added '+rec.name);
+  render();
 }
 function toggleDecalHidden(id){
   const d = extDecals.find(x=>x.id===id); if(!d) return;
@@ -1284,6 +1298,12 @@ async function scanFolder(){
   }finally{ scanning = false; applyResume(); render(); }
 }
 $folder.addEventListener('change', e => { addFiles(e.target.files); e.target.value=''; });
+const $decalPhoto = document.getElementById('decalPhotoPick');
+$decalPhoto.addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if(f) addPhotoDecal(f);
+});
 
 /* ---------- native app bridge: receives folder contents picked via Android's file picker ---------- */
 window.nativeFolderScanned = function(jsonStr){
@@ -1806,12 +1826,14 @@ function screenDef(sc){
       })) : [{lab:'No decals available', dim:true}]};
     }
     case 'decalsmanage': return {title:'Decals', items: extDecals.length ? [
+      {lab:'Add Photo…', act(){ $decalPhoto.click(); }},
       {lab:'Arrange on Screen', act(){ enterArrangeMode(); }},
       ...extDecals.map(d=>({
         lab:d.name, val: d.hidden?'Hidden':'Shown', arrow:true, go:{type:'decalview', decalId:d.id, sel:0, top:0}
       })),
       {lab:'Get More Decals…', arrow:true, act(){ openStoreDecals(); }},
     ] : [
+      {lab:'Add Photo…', act(){ $decalPhoto.click(); }},
       {lab:'No decals installed', dim:true},
       {lab:'Get More Decals…', arrow:true, act(){ openStoreDecals(); }},
     ]};
