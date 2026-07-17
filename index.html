@@ -628,25 +628,17 @@ function removeNote(id){
 let extApps = [];
 // transient browse state for the store screens; null = not loaded yet, [] = loaded empty
 const market = { apps:null, themes:null, decals:null, appsErr:null, themesErr:null, decalsErr:null };
-function marketBase(){ return String(custom.marketUrl||'').replace(/\/+$/,''); }
+// fixed on purpose: Get More only ever points at this marketplace, not user-editable
+const MARKET_URL = 'https://iwohost.github.io/hplay-market';
+function marketBase(){ return MARKET_URL.replace(/\/+$/,''); }
 function resolveUrl(path){
   if(/^https?:\/\//i.test(path)) return path;
   return marketBase() + '/' + String(path).replace(/^\/+/,'');
 }
 async function loadManifest(){
-  const base = marketBase();
-  if(!base) throw new Error('No marketplace URL set');
-  const res = await fetch(base+'/manifest.json', {cache:'no-store'});
+  const res = await fetch(marketBase()+'/manifest.json', {cache:'no-store'});
   if(!res.ok) throw new Error('HTTP '+res.status);
   return res.json();
-}
-function setMarketUrl(){
-  const u = prompt('Marketplace URL', custom.marketUrl || 'https://');
-  if(u!=null){
-    custom.marketUrl = u.trim(); saveSettings();
-    market.apps=market.themes=market.decals=null; market.appsErr=market.themesErr=market.decalsErr=null;
-    render();
-  }
 }
 function openStoreApps(){
   stack.push({type:'storeapps', sel:0, top:0});
@@ -993,7 +985,7 @@ function saveSettings(){
   dbPut('kv', { shuffle:settings.shuffle, repeat:settings.repeat, clicker:settings.clicker,
                 theme:themeName, wheel:wheelName, volume:audio.volume,
                 dark:custom.dark, wheelSize:custom.wheelSize, sway:custom.sway, devName:custom.devName,
-                marketUrl:custom.marketUrl, engraving:custom.engraving,
+                engraving:custom.engraving,
                 sleepEnd:sleepEndMode, fadeSec:fadeSec }, 'settings');
 }
 async function eraseAll(){
@@ -1011,7 +1003,7 @@ async function eraseAll(){
   market.apps = market.themes = market.decals = null; market.appsErr = market.themesErr = market.decalsErr = null;
   stack.length = 1; stack[0] = {type:'main', sel:0, top:0};
   applyTheme('Blue'); applyWheelColor('Match');
-  custom.dark=false; custom.wheelSize='Normal'; custom.sway=true; custom.devName='Hplay'; custom.marketUrl=''; custom.engraving='';
+  custom.dark=false; custom.wheelSize='Normal'; custom.sway=true; custom.devName='Hplay'; custom.engraving='';
   applyCustom();
   settings.shuffle=false; settings.repeat='Off'; settings.clicker=true;
   appStats = { opens:0, playCount:0, playMs:0, quizAnswered:0, quizCorrect:0, quizBest:0, songPlays:{} };
@@ -1040,7 +1032,6 @@ async function restore(){
     if(s.wheelSize && WHEEL_SIZES[s.wheelSize]) custom.wheelSize = s.wheelSize;
     if(typeof s.sway==='boolean') custom.sway = s.sway;
     if(s.devName) custom.devName = String(s.devName).slice(0,20);
-    if(s.marketUrl) custom.marketUrl = s.marketUrl;
     if(typeof s.engraving==='string') custom.engraving = s.engraving.slice(0,40);
     applyCustom();
   }
@@ -1433,7 +1424,7 @@ const THEMES = {
 };
 let themeName = 'Blue';          // body color
 let wheelName = 'Match';         // wheel color ('Match' = follow body)
-const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay', marketUrl:'https://iwohost.github.io/hplay-market', engraving:'' };
+const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay', engraving:'' };
 const WHEEL_SIZES = { Small:['56vw','46dvh'], Normal:['64vw','52dvh'], Big:['74vw','60dvh'] };
 // installed downloadable themes: { id, name, b:[4], w:[4], c:[3], lab, labsh } — same shape as THEMES entries
 let extThemes = [];
@@ -1602,13 +1593,8 @@ function screenDef(sc){
       {lab:'Browse Apps', arrow:true, act(){ openStoreApps(); }},
       {lab:'Browse Themes', arrow:true, act(){ openStoreThemes(); }},
       {lab:'Browse Decals', arrow:true, act(){ openStoreDecals(); }},
-      {lab:'Marketplace URL…', val: custom.marketUrl||'Not set', act(){ setMarketUrl(); }},
     ]};
     case 'storeapps': {
-      if(!custom.marketUrl) return {title:'Browse Apps', items:[
-        {lab:'Set a Marketplace URL first', dim:true},
-        {lab:'Marketplace URL…', act(){ setMarketUrl(); }},
-      ]};
       if(market.appsErr) return {title:'Browse Apps', items:[{lab:'Couldn’t load: '+market.appsErr, dim:true}]};
       if(market.apps===null) return {title:'Browse Apps', items:[{lab:'Loading…', dim:true}]};
       return {title:'Browse Apps', items: market.apps.length ? market.apps.map(a=>({
@@ -1618,10 +1604,6 @@ function screenDef(sc){
       })) : [{lab:'No apps available', dim:true}]};
     }
     case 'storethemes': {
-      if(!custom.marketUrl) return {title:'Browse Themes', items:[
-        {lab:'Set a Marketplace URL first', dim:true},
-        {lab:'Marketplace URL…', act(){ setMarketUrl(); }},
-      ]};
       if(market.themesErr) return {title:'Browse Themes', items:[{lab:'Couldn’t load: '+market.themesErr, dim:true}]};
       if(market.themes===null) return {title:'Browse Themes', items:[{lab:'Loading…', dim:true}]};
       return {title:'Browse Themes', items: market.themes.length ? market.themes.map(t=>({
@@ -1631,10 +1613,6 @@ function screenDef(sc){
       })) : [{lab:'No themes available', dim:true}]};
     }
     case 'storedecals': {
-      if(!custom.marketUrl) return {title:'Browse Decals', items:[
-        {lab:'Set a Marketplace URL first', dim:true},
-        {lab:'Marketplace URL…', act(){ setMarketUrl(); }},
-      ]};
       if(market.decalsErr) return {title:'Browse Decals', items:[{lab:'Couldn’t load: '+market.decalsErr, dim:true}]};
       if(market.decals===null) return {title:'Browse Decals', items:[{lab:'Loading…', dim:true}]};
       return {title:'Browse Decals', items: market.decals.length ? market.decals.map(d=>({
