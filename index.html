@@ -18,7 +18,7 @@
     --lab:#f2f5ff; --labsh:rgba(0,10,50,.6);
   }
   * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  html,body { height:100%; height:100dvh; overflow:hidden; overscroll-behavior:none; touch-action:none; background:var(--b4); }
+  html,body { height:100%; height:calc(var(--vh, 1vh) * 100); overflow:hidden; overscroll-behavior:none; touch-action:none; background:var(--b4); }
   body {
     font-family:"Helvetica Neue", Helvetica, Arial, sans-serif;
     user-select:none; -webkit-user-select:none;
@@ -62,7 +62,7 @@
   .bezel {
     flex:0 0 auto; width:92vw;
     aspect-ratio: 1.45;           /* constant compact shape */
-    max-height:40dvh; max-width:calc(40dvh * 1.45 + 6vw);
+    max-height:calc(var(--vh, 1vh) * 40); max-width:calc(var(--vh, 1vh) * 40 * 1.45 + 6vw);
     background:linear-gradient(180deg,#05070b,#141920);
     border-radius:4vw;
     box-shadow:
@@ -267,7 +267,7 @@
   /* ============ CLICK WHEEL ============ */
   .wheelZone {
     position:relative; flex:0 0 auto;
-    width:var(--wheelsize, 64vw); max-width:var(--wheelmax, 52dvh); aspect-ratio:1;
+    width:var(--wheelsize, 64vw); max-width:var(--wheelmax, calc(var(--vh, 1vh) * 52)); aspect-ratio:1;
     border-radius:50%;
     touch-action:none; -ms-touch-action:none; cursor:pointer; z-index:2;
     -webkit-user-select:none; user-select:none;
@@ -294,7 +294,7 @@
   }
   .wlab {
     position:absolute; color:var(--lab); font-weight:700;
-    letter-spacing:.16em; font-size:min(3.6vw, 1.9dvh);
+    letter-spacing:.16em; font-size:min(3.6vw, calc(var(--vh, 1vh) * 1.9));
     text-shadow:0 1px 3px var(--labsh);
     pointer-events:none;
   }
@@ -302,7 +302,7 @@
   .wlab.prev { left:7.5%; top:50%; transform:translateY(-50%); }
   .wlab.next { right:7.5%; top:50%; transform:translateY(-50%); }
   .wlab.play { bottom:8%; left:50%; transform:translateX(-50%); }
-  .wlab svg { width:min(5.5vw, 2.9dvh); height:min(4vw, 2.1dvh); display:block; }
+  .wlab svg { width:min(5.5vw, calc(var(--vh, 1vh) * 2.9)); height:min(4vw, calc(var(--vh, 1vh) * 2.1)); display:block; }
   .center {
     position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
     width:37%; aspect-ratio:1; border-radius:50%;
@@ -433,7 +433,7 @@
     position:absolute; left:50%; top:0; transform:translate(-50%,-50%);
     text-align:center; padding:0 8vw; max-width:84vw;
     font-family:inherit; font-style:italic; font-weight:500;
-    font-size:min(3.6vw, 1.8dvh); letter-spacing:.03em;
+    font-size:min(3.6vw, calc(var(--vh, 1vh) * 1.8)); letter-spacing:.03em;
     color:rgba(255,255,255,.5);
     text-shadow:0 -1px 1px rgba(0,10,40,.5), 0 1px 0 rgba(255,255,255,.18);
     overflow:hidden; white-space:nowrap; text-overflow:ellipsis; z-index:2; pointer-events:none;
@@ -525,6 +525,7 @@ const $file   = document.getElementById('filePick');
 const audio   = document.getElementById('audio');
 
 function setUnits(){
+  document.documentElement.style.setProperty('--vh', (window.innerHeight*0.01)+'px');
   const h = $screen.clientHeight || 1;
   document.documentElement.style.setProperty('--su', (h/240)+'px');
   positionEngraving();
@@ -537,8 +538,13 @@ function positionEngraving(){
   const wRect = $wheel.getBoundingClientRect();
   el.style.top = ((bRect.bottom + wRect.top) / 2) + 'px';
 }
-new ResizeObserver(setUnits).observe($screen);
+// keep re-measuring while the layout settles (immersive mode engaging, boot
+// animation, system bars), then freeze it for good — no more resizing after that,
+// even if the system bars flicker in/out later
+const suObserver = new ResizeObserver(setUnits);
+suObserver.observe($screen);
 setUnits();
+setTimeout(()=>{ setUnits(); suObserver.disconnect(); }, 1500);
 
 /* ---------- state ---------- */
 const lib = [];
@@ -1571,7 +1577,11 @@ const THEMES = {
 let themeName = 'Blue';          // body color
 let wheelName = 'Match';         // wheel color ('Match' = follow body)
 const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay', engraving:'' };
-const WHEEL_SIZES = { Small:['56vw','46dvh'], Normal:['64vw','52dvh'], Big:['74vw','60dvh'] };
+const WHEEL_SIZES = {
+  Small:  ['56vw', 'calc(var(--vh, 1vh) * 46)'],
+  Normal: ['64vw', 'calc(var(--vh, 1vh) * 52)'],
+  Big:    ['74vw', 'calc(var(--vh, 1vh) * 60)'],
+};
 // installed downloadable themes: { id, name, b:[4], w:[4], c:[3], lab, labsh } — same shape as THEMES entries
 let extThemes = [];
 function themeByName(name){ return THEMES[name] || extThemes.find(t=>t.name===name); }
