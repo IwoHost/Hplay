@@ -204,7 +204,7 @@
   }
   .pane .cover {
     width:64%; aspect-ratio:1;
-    background:#cfd3d9 center/contain no-repeat;
+    background:#cfd3d9 center/cover no-repeat;
     border:calc(var(--su)*2) solid #fff;
     box-shadow:calc(var(--su)*-3) calc(var(--su)*3) calc(var(--su)*8) rgba(0,0,0,.35);
     transform:rotateY(-22deg);
@@ -215,10 +215,10 @@
   /* --- now playing (like the real one) --- */
   .np { flex:1; display:flex; flex-direction:column; padding:calc(var(--su)*10) calc(var(--su)*9) calc(var(--su)*7); position:relative; }
   .np .shuf { position:absolute; top:calc(var(--su)*4); right:calc(var(--su)*8); width:calc(var(--su)*14); height:calc(var(--su)*9); color:#3f8bde; }
-  .np .mid { flex:1; display:flex; gap:calc(var(--su)*9); align-items:center; min-height:0; perspective:70vw; overflow:hidden; }
+  .np .mid { flex:1; display:flex; gap:calc(var(--su)*9); align-items:center; min-height:0; perspective:70vw; }
   .art {
     flex:0 0 44%; aspect-ratio:1;
-    background:#dfe2e6 center/contain no-repeat;
+    background:#dfe2e6 center/cover no-repeat;
     border:calc(var(--su)*2.4) solid #f6f4ef;
     box-shadow:calc(var(--su)*-4) calc(var(--su)*4) calc(var(--su)*10) rgba(0,0,0,.32);
     transform:rotateY(14deg);
@@ -401,7 +401,7 @@
     gap:calc(var(--su)*6); padding:calc(var(--su)*6) calc(var(--su)*10); text-align:center; }
   .confirm .ttl{ font-size:calc(var(--su)*9); font-weight:700; color:#8b8f97; letter-spacing:.12em; text-transform:uppercase; }
   .confirm .cfmart{ width:calc(var(--su)*70); height:calc(var(--su)*70); border-radius:calc(var(--su)*7);
-    background:#dfe2e6 center/contain no-repeat; box-shadow:0 calc(var(--su)*3) calc(var(--su)*11) rgba(0,0,0,.45); }
+    background:#dfe2e6 center/cover no-repeat; box-shadow:0 calc(var(--su)*3) calc(var(--su)*11) rgba(0,0,0,.45); }
   .confirm .cfmart.blank{ display:flex; align-items:center; justify-content:center; color:#a9adb4; font-size:calc(var(--su)*28); }
   .confirm .nm{ font-size:calc(var(--su)*11); font-weight:700; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .cfmbtns{ display:flex; gap:calc(var(--su)*7); margin-top:calc(var(--su)*2); }
