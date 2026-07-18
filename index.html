@@ -1446,6 +1446,10 @@ function notifyNative(){
   }catch(e){}
 }
 window.nativeSeek = function(t){ if(isFinite(t)) audio.currentTime = Math.max(0, t); };
+window.nativePlay = function(){ audio.play().catch(()=>{}); };
+window.nativePause = function(){ audio.pause(); };
+window.nativeNext = function(){ nextTrack(false); };
+window.nativePrev = function(){ prevTrack(); };
 let npSaveTimer = 0;
 function saveNowPlaying(){
   const s = nowSong();
