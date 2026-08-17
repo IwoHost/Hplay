@@ -1435,15 +1435,52 @@ function updateMediaSession(s){
   }catch(e){}
 }
 /* ---------- native app bridge: keeps Android's MediaSession/notification in sync with playback ---------- */
+// downscales a song's art blob to a small square JPEG data URL, for the Android
+// lock-screen/notification media widget (which needs actual pixel data, not a blob: URL
+// that only exists inside this WebView's origin)
+function blobToDownscaledDataUrl(blob, size){
+  size = size || 300;
+  return new Promise(res=>{
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = ()=>{
+      try{
+        const canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        const cctx = canvas.getContext('2d');
+        const s = Math.min(img.naturalWidth, img.naturalHeight);
+        const sx = (img.naturalWidth-s)/2, sy = (img.naturalHeight-s)/2;
+        cctx.drawImage(img, sx, sy, s, s, 0, 0, size, size);
+        res(canvas.toDataURL('image/jpeg', 0.82));
+      }catch(e){ res(null); }
+      finally{ URL.revokeObjectURL(url); }
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); res(null); };
+    img.src = url;
+  });
+}
+let notifyArtSongId = null, notifyArtData = null, notifyArtSentFor = null;
 function notifyNative(){
   if(!NATIVE || typeof Android.notifyState !== 'function') return;
   const s = nowSong();
-  try{
-    Android.notifyState(JSON.stringify({
-      title: s ? dispTitle(s.title) : '', artist: s ? s.artist : '', album: s ? s.album : '',
-      playing: !audio.paused, position: audio.currentTime||0, duration: audio.duration||0
-    }));
-  }catch(e){}
+  const sid = s ? s.id : null;
+  if(sid !== notifyArtSongId){
+    notifyArtSongId = sid; notifyArtData = null; notifyArtSentFor = null;
+    if(s && s._artBlob){
+      blobToDownscaledDataUrl(s._artBlob).then(dataUrl=>{
+        if(notifyArtSongId===sid){ notifyArtData = dataUrl; notifyNative(); }
+      });
+    }
+  }
+  const payload = {
+    title: s ? dispTitle(s.title) : '', artist: s ? s.artist : '', album: s ? s.album : '',
+    playing: !audio.paused, position: audio.currentTime||0, duration: audio.duration||0
+  };
+  if(notifyArtSentFor !== sid){
+    if(notifyArtData){ payload.art = notifyArtData; notifyArtSentFor = sid; }
+    else if(!(s && s._artBlob)){ payload.clearArt = true; notifyArtSentFor = sid; }
+  }
+  try{ Android.notifyState(JSON.stringify(payload)); }catch(e){}
 }
 window.nativeSeek = function(t){ if(isFinite(t)) audio.currentTime = Math.max(0, t); };
 window.nativePlay = function(){ audio.play().catch(()=>{}); };
@@ -1820,7 +1857,7 @@ function screenDef(sc){
     }
     case 'notes': return {title:'Notes', items:[
       {lab:'Add Note…', act(){ openTextEntry('New Note', '', (t)=>{ if(t && t.trim()){ addNote(t.trim()); } render(); }); }},
-      ...(notes.length ? notes.map(n=>({lab:noteSummary(n), arrow:true, go:{type:'noteview', noteId:n.id, sel:0, top:0}}))
+      ...(notes.length ? notes.map(n=>({lab:noteSummary(n), arrow:true, noteId:n.id, go:{type:'noteview', noteId:n.id, sel:0, top:0}}))
                        : [{lab:'No Notes', dim:true}]),
     ]};
     case 'noteview': {
@@ -1891,6 +1928,18 @@ function lyricsHTML(s){
   return `<div class="lyrics plain">${lines}</div>`;
 }
 function dispTitle(s){ return String(s==null?'':s).replace(/\s*[\(\[][^\(\)\[\]]*[\)\]]/g, '').replace(/\s{2,}/g,' ').trim(); }
+function playlistCount(){
+  const counts = {};
+  lib.forEach(s=>{ counts[s.album] = (counts[s.album]||0)+1; });
+  return [...new Set(lib.map(s=>s.album))].filter(a=>counts[a] >= 2).length;
+}
+// press center on the About screen to cycle through these, like the real thing's multi-page About
+const ABOUT_PAGES = [
+  { big: () => custom.devName, body: () => `Songs: ${lib.length}<br>Playlists: ${playlistCount()}<br>Music stored on this device` },
+  { big: () => 'Privacy', body: () => 'Ads: none<br>Tracking: none<br>Analytics: none<br><br>Your music never leaves this device' },
+  { big: () => 'Software', body: () => 'Hplay v26.0<br>by host · IKSIX' },
+  { big: () => 'Tip', body: () => 'Hold center on a song, app, or note<br>to quickly delete or rename it<br><br>Hold center on Now Playing<br>to delete the current song' },
+];
 
 const VISIBLE = 12;
 
@@ -1946,16 +1995,21 @@ function render(){
       const a = extApps.find(x=>x.id===sc.extId);
       nm = a ? a.name : '';
       art = `<div class="cfmart blank">${esc((nm||'?').trim().slice(0,1).toUpperCase())}</div>`;
+    } else if(sc.kind==='note'){
+      const n = notes.find(x=>x.id===sc.noteId);
+      nm = n ? noteSummary(n) : '';
+      art = `<div class="cfmart blank">${esc((nm||'?').trim().slice(0,1).toUpperCase())}</div>`;
     } else {
       const s = song(sc.songId);
       nm = s ? dispTitle(s.title) : '';
       art = s&&s.art ? `<div class="cfmart" style="background-image:url('${s.art}')"></div>` : `<div class="cfmart blank">\u266a</div>`;
     }
+    const delLabel = sc.kind==='app' ? 'Uninstall' : sc.kind==='note' ? 'Delete Note' : 'Delete';
     html += `<div class="content"><div class="confirm">
-      <div class="ttl">${sc.kind==='app' ? 'Uninstall?' : 'Delete?'}</div>
+      <div class="ttl">${sc.kind==='app' ? 'Uninstall?' : sc.kind==='note' ? 'Delete Note?' : 'Delete?'}</div>
       ${art}
       <div class="nm">${esc(nm)}</div>
-      <div class="cfmbtns"><div class="cfmbtn ${selD===0?'sel':''}">Keep</div><div class="cfmbtn del ${selD===1?'sel':''}">${sc.kind==='app'?'Uninstall':'Delete'}</div></div>
+      <div class="cfmbtns"><div class="cfmbtn ${selD===0?'sel':''}">Keep</div><div class="cfmbtn del ${selD===1?'sel':''}">${delLabel}</div></div>
     </div></div>`;
     html += nowlineHTML();
     $screen.innerHTML = html; return;
@@ -1989,9 +2043,11 @@ function render(){
     return;
   }
   if(def.about){
+    const page = ABOUT_PAGES[(sc.aboutPage||0) % ABOUT_PAGES.length];
     html += `<div class="content"><div class="splash">
-      <div class="big">${esc(custom.devName)}</div>
-      <div class="small">Songs: ${lib.length}<br>Music stored on this device<br>Ads: none · Tracking: none<br><br>Hplay by host · IKSIX · v26.0</div>
+      <div class="big">${esc(page.big())}</div>
+      <div class="small">${page.body()}</div>
+      <div class="small" style="opacity:.55; margin-top:calc(var(--su)*2);">${(sc.aboutPage||0)+1} / ${ABOUT_PAGES.length} · press center</div>
     </div></div>`;
     html += nowlineHTML();
     $screen.innerHTML = html;
@@ -2183,6 +2239,7 @@ function select(){
     npMode = npMode===0 ? 1 : (npMode===1 && hasLyrics ? 2 : 0);
     render(); return;
   }
+  if(sc.type==='about'){ sc.aboutPage = ((sc.aboutPage||0)+1) % ABOUT_PAGES.length; render(); return; }
   if(sc.type==='confirmdel'){ (sc.sel===1?delYes:delNo)(); return; }
   if(sc.type==='quiz'){ quizAnswer(); return; }
   if(sc.type==='songs' && sc.reordering){ sc.reordering=false; toast('Order saved'); render(); return; }
@@ -2230,29 +2287,37 @@ function untiltFace(){ if($face){ $face.style.transition=''; $face.style.transfo
 function currentRowSongId(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.songId:undefined; }
 function currentRowExtId(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.extId:undefined; }
 function currentRowPlaylistName(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.playlistName:undefined; }
+function currentRowNoteId(){ const def=screenDef(cur()); const it=def.items&&def.items[cur().sel]; return it?it.noteId:undefined; }
 function goHome(){ if(pendingMedia) permNo(); if(arranging) exitArrangeMode(); npMode=0; stack.length=1; stack[0]={type:'main', sel:0, top:0}; render(); }
 function openSleep(){ stack.push({type:'sleeptimer', sel:0, top:0}); render(); }
 function openDelete(id, kind){
   kind = kind||'song';
-  stack.push({type:'confirmdel', kind, songId: kind==='song'?id:undefined, extId: kind==='app'?id:undefined, sel:0});
+  stack.push({type:'confirmdel', kind, songId: kind==='song'?id:undefined, extId: kind==='app'?id:undefined, noteId: kind==='note'?id:undefined, sel:0});
   render();
 }
 function fixSel(){ const sc=cur(); if(sc&&typeof sc.sel==='number'){ const it=(screenDef(sc).items||[]); if(sc.sel>=it.length) sc.sel=Math.max(0,it.length-1); } }
 function delYes(){
   const sc=cur(); if(sc.type!=='confirmdel') return;
   if(sc.kind==='app'){ const id=sc.extId; stack.pop(); uninstallExt(id); fixSel(); render(); return; }
+  if(sc.kind==='note'){ const id=sc.noteId; stack.pop(); removeNote(id); fixSel(); render(); return; }
   const id=sc.songId; stack.pop(); removeSong(id); fixSel(); render();
 }
 function delNo(){ if(cur().type==='confirmdel'){ stack.pop(); render(); } }
 // which hold action (if any) applies to where the finger is pressing
 function holdActionFor(x,y,r){
   if(dist(x,y,r) < 0.4){
+    if(cur().type==='np'){
+      const s = nowSong();
+      return s ? ()=>openDelete(s.id,'song') : null;
+    }
     const songId = currentRowSongId();
     if(songId!=null) return ()=>openDelete(songId,'song');
     const eid = currentRowExtId();
     if(eid!=null) return ()=>openDelete(eid,'app');
     const pname = currentRowPlaylistName();
     if(pname!=null) return ()=>renamePlaylist(pname);
+    const nid = currentRowNoteId();
+    if(nid!=null) return ()=>openDelete(nid,'note');
     return null;
   }
   const a = angle(x,y,r);
