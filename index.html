@@ -411,6 +411,8 @@
   .cfmbtn.del.sel{ background:linear-gradient(180deg,#f28b7d,#d63a2a); color:#fff; }
   .hidden{ display:none !important; }
   .decalLayer{ position:absolute; inset:0; z-index:1; pointer-events:none; overflow:hidden; }
+  .sleepDim{ position:fixed; inset:0; z-index:35; background:#000; opacity:0; pointer-events:none; transition:opacity 1s linear; }
+  .sleepDim.off{ pointer-events:auto; transition:opacity .4s ease; }
   .decalLayer img{ position:absolute; filter:drop-shadow(0 .3vh .8vh rgba(0,0,0,.35)); }
   .decalLayer.arranging{ pointer-events:auto; touch-action:none; }
   .decalLayer.arranging img{
@@ -471,6 +473,7 @@
 
 <div class="ipod" id="ipod">
   <div class="decalLayer" id="decalLayer"></div>
+  <div class="sleepDim" id="sleepDim"></div>
   <div class="bezel">
     <div class="screen" id="screen"></div>
     <div class="bootscreen" id="bootScreen"><div class="bgrp"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAGHaVRYdFhNTDpjb20uYWRvYmUueG1wAAAAAAA8P3hwYWNrZXQgYmVnaW49J++7vycgaWQ9J1c1TTBNcENlaGlIenJlU3pOVGN6a2M5ZCc/Pg0KPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyI+PHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj48cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0idXVpZDpmYWY1YmRkNS1iYTNkLTExZGEtYWQzMS1kMzNkNzUxODJmMWIiIHhtbG5zOnRpZmY9Imh0dHA6Ly9ucy5hZG9iZS5jb20vdGlmZi8xLjAvIj48dGlmZjpPcmllbnRhdGlvbj4xPC90aWZmOk9yaWVudGF0aW9uPjwvcmRmOkRlc2NyaXB0aW9uPjwvcmRmOlJERj48L3g6eG1wbWV0YT4NCjw/eHBhY2tldCBlbmQ9J3cnPz4slJgLAAACPUlEQVR4Xu2ZzXECMQyFtWmAGiiBRuiEauiERiiBGlLB5oIY8Ub+kWx5Z2J/p4xsS3pPXg4x0WIxNRsGRnHZbzvGntt9eD/DC0rhv4/XJ366nj9/jzRiWKGUcGS0EeEFSIjPCUfYiGgTQpPXTj3FiNsQkrRVOBJpRNdkvYUjEUZ0SRItHOlpRNNhaviB0/an4il6/FC6D3qmLiennSmta7TeBvOBVuHP7b5d9tuunT1dz591jmn7NLDG12KG6o0tTWFDJQNkzPqJWY0obugpnLEYwEQZkVwgR1EqiGA8BjCpsylKw/jBAGMVf7qeqwS08tzuG9eqgfuXN1mSNIAqxUvh0eIZrlVrRE5H1oAcRwhHrEZouAwofVej4T48JpgNOHrqKeRtsGA24L+xDMDAbCwDMDAbywAMzMYyAAOzsQzAwGwsAzAwG8sADMzGMgADs7EMwMBsLAMwMBsuAy77bU+9tByFtyezAb+PV/G5aTTyGS/3CqSRNSD3P3ZpwlFGyNo54Tkd2ceNmuRkeIpmUi+8/OiCcUQaruWRlF6x1KDEU4wyBanBgIhekgtIz+JWA3rWRoobkNrPgjLN1BpgEU4V112jeqPE2xi9mysZ0Jr/a7GAaTNiuQ0EjWpnSusanqlLXIck1mnRu2ltbyqu0TJ1ifsg4jHCQy/hTHMCxPpZWGi97hrdEkl634beU5d0TYa0GhEpnAlJing+i4jrrhGaXFJ7G0ZMXRJeAEkZMVo4M6yQRJqAjBS/WCzoD/1qsufnpD0YAAAAAElFTkSuQmCC" alt=""><div class="bhost">HostLab</div><div class="bname">HPlay</div></div></div>
@@ -574,23 +577,50 @@ const SLEEP_ENDS = ['Stop now','Fade out','End of track'];
 const FADE_SECS  = [10,20,30,60];
 let sleepMin = 0, sleepUntil = 0, sleepEndMode = 'Stop now', fadeSec = 30;
 let sleepTimerId = 0, fadeId = 0, stopAfterTrack = false;
-function clearSleep(){ clearTimeout(sleepTimerId); sleepTimerId=0; clearInterval(fadeId); fadeId=0; stopAfterTrack=false; sleepUntil=0; }
+let sleepTotalMs = 0, sleepOff = false;
+function clearSleep(){ clearTimeout(sleepTimerId); sleepTimerId=0; clearInterval(fadeId); fadeId=0; stopAfterTrack=false; sleepUntil=0; sleepTotalMs=0; }
 function sleepRemaining(){ return sleepUntil ? Math.max(0, sleepUntil-Date.now()) : 0; }
 function fmtClock(ms){ const s=Math.ceil(ms/1000); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
-function sleepDone(){ audio.pause(); sleepMin=0; clearSleep(); if(cur().type==='sleeptimer') render(); }
+// once the sleep timer actually finishes: pop up a note, fade the whole device to black,
+// and let Android's own screen-off/lock kick in instead of forcing it to stay lit all night
+function finishSleep(){
+  sleepOff = true;
+  toast('Sleep timer ended — goodnight');
+  updateSleepDim();
+  if(NATIVE && typeof Android.setKeepAwake==='function'){ try{ Android.setKeepAwake(false); }catch(e){} }
+}
+function wakeFromSleep(){
+  if(!sleepOff) return;
+  sleepOff = false;
+  updateSleepDim();
+  if(NATIVE && typeof Android.setKeepAwake==='function'){ try{ Android.setKeepAwake(true); }catch(e){} }
+}
+function updateSleepDim(){
+  const el = document.getElementById('sleepDim'); if(!el) return;
+  if(sleepOff){ el.style.opacity='1'; el.classList.add('off'); return; }
+  el.classList.remove('off');
+  el.style.opacity = (sleepUntil && sleepTotalMs>0)
+    ? String(Math.min(0.85, (1 - Math.max(0, Math.min(1, sleepRemaining()/sleepTotalMs))) * 0.85))
+    : '0';
+}
+setInterval(updateSleepDim, 1000);
+document.getElementById('sleepDim').addEventListener('pointerdown', ()=>{ if(sleepOff) wakeFromSleep(); });
+function sleepDone(){ audio.pause(); sleepMin=0; clearSleep(); finishSleep(); if(cur().type==='sleeptimer') render(); }
 function startFade(){
   const startVol = audio.volume, t0 = Date.now(), dur = fadeSec*1000;
   clearInterval(fadeId);
   fadeId = setInterval(()=>{
     const p = Math.min(1, (Date.now()-t0)/dur);
     audio.volume = Math.max(0, startVol*(1-p));
-    if(p>=1){ clearInterval(fadeId); fadeId=0; audio.pause(); audio.volume=startVol; sleepMin=0; clearSleep(); if(cur().type==='sleeptimer') render(); }
+    if(p>=1){ clearInterval(fadeId); fadeId=0; audio.pause(); audio.volume=startVol; sleepMin=0; clearSleep(); finishSleep(); if(cur().type==='sleeptimer') render(); }
   }, 150);
 }
 function startSleep(){
   clearSleep();
+  wakeFromSleep();
   if(sleepMin<=0) return;
-  sleepUntil = Date.now() + sleepMin*60000;
+  sleepTotalMs = sleepMin*60000;
+  sleepUntil = Date.now() + sleepTotalMs;
   if(sleepEndMode==='Fade out'){
     sleepTimerId = setTimeout(startFade, Math.max(0, sleepMin*60000 - fadeSec*1000));
   } else if(sleepEndMode==='End of track'){
@@ -1506,7 +1536,7 @@ function prevTrack(){
   playCurrent();
 }
 let lastPlayTick = 0;
-audio.addEventListener('ended', ()=>{ if(stopAfterTrack){ stopAfterTrack=false; sleepMin=0; clearSleep(); audio.pause(); if(cur().type==='sleeptimer') render(); return; } nextTrack(true); });
+audio.addEventListener('ended', ()=>{ if(stopAfterTrack){ stopAfterTrack=false; sleepMin=0; clearSleep(); audio.pause(); finishSleep(); if(cur().type==='sleeptimer') render(); return; } nextTrack(true); });
 audio.addEventListener('play',  ()=>{ lastPlayTick = Date.now(); if('mediaSession' in navigator) navigator.mediaSession.playbackState='playing'; render(); notifyNative(); });
 audio.addEventListener('pause', ()=>{ lastPlayTick = 0; if('mediaSession' in navigator) navigator.mediaSession.playbackState='paused'; saveNowPlaying(); saveAppStats(); render(); notifyNative(); });
 audio.addEventListener('timeupdate', ()=>{
@@ -1775,7 +1805,7 @@ function screenDef(sc){
         {lab:'When Done', val: sleepEndMode, act(){ const i=SLEEP_ENDS.indexOf(sleepEndMode); sleepEndMode=SLEEP_ENDS[(i+1)%SLEEP_ENDS.length]; if(sleepMin) startSleep(); saveSettings(); render(); }},
       ];
       if(sleepEndMode==='Fade out') items.push({lab:'Fade Length', val: fadeSec+'s', act(){ const i=FADE_SECS.indexOf(fadeSec); fadeSec=FADE_SECS[(i+1)%FADE_SECS.length]; if(sleepMin) startSleep(); saveSettings(); render(); }});
-      if(sleepMin) items.push({lab:'Cancel Timer', act(){ sleepMin=0; clearSleep(); render(); }});
+      if(sleepMin) items.push({lab:'Cancel Timer', act(){ sleepMin=0; clearSleep(); wakeFromSleep(); updateSleepDim(); render(); }});
       return {title:'Sleep Timer', sleep:true, items};
     }
     case 'sleepdur': return {title:'Duration', items: SLEEP_DURS.map(d=>(
@@ -2340,6 +2370,7 @@ function startScrub(dir){
 }
 function stopScrub(){ clearInterval(scrubIntervalId); scrubIntervalId = 0; scrubDir = 0; }
 function gStart(x,y,type){
+  if(sleepOff){ wakeFromSleep(); return; }
   ensureAC();
   const r = $wheel.getBoundingClientRect();   // static layer -> stable geometry
   $wheel.classList.add('pressed');
@@ -2442,6 +2473,7 @@ $wheel.addEventListener('touchcancel', ()=>{ if(ptr && ptr.type==='touch') gCanc
 
 /* keyboard (desktop testing) */
 addEventListener('keydown', e=>{
+  if(sleepOff){ wakeFromSleep(); return; }
   if(e.key==='ArrowDown'||e.key==='ArrowRight') scroll(1);
   else if(e.key==='ArrowUp'||e.key==='ArrowLeft') scroll(-1);
   else if(e.key==='Enter') select();
