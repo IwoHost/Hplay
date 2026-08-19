@@ -2286,10 +2286,29 @@ function back(){
   if(cur().type==='textentry'){ textEntryCancel(); return; }
   if(stack.length>1){ npMode=0; stack.pop(); render(); }
 }
+async function resumeLastOrPlayAll(){
+  try{
+    const rp = await dbGet('kv','resume');
+    if(rp && rp.id!=null && Array.isArray(rp.list)){
+      const list = rp.list.filter(id=>song(id));
+      if(list.length && song(rp.id)){
+        const resumePos = rp.pos||0;
+        buildPlaylist(list, rp.id, rp.label||'');
+        if(resumePos>0){
+          const applyPos = ()=>{ audio.currentTime = resumePos; audio.removeEventListener('loadedmetadata', applyPos); };
+          audio.addEventListener('loadedmetadata', applyPos);
+        }
+        stack.push({type:'np'}); render();
+        return;
+      }
+    }
+  }catch(e){}
+  if(lib.length){ buildPlaylist(lib.map(s=>s.id), lib[0].id, 'All Songs'); stack.push({type:'np'}); render(); }
+}
 function playPause(){
   ensureAC(); clickSound();
   if(!nowSong()){
-    if(lib.length){ buildPlaylist(lib.map(s=>s.id), lib[0].id, 'All Songs'); stack.push({type:'np'}); render(); }
+    resumeLastOrPlayAll();
     return;
   }
   if(audio.paused) audio.play(); else audio.pause();
