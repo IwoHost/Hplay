@@ -1113,7 +1113,7 @@ async function eraseAll(){
   market.apps = market.themes = null; market.appsErr = market.themesErr = null;
   stack.length = 1; stack[0] = {type:'main', sel:0, top:0};
   applyTheme('Blue'); applyWheelColor('Match');
-  custom.dark=false; custom.wheelSize='Gordan'; custom.sway=true; custom.devName='Hplay';
+  custom.dark=false; custom.wheelSize='Normal'; custom.sway=true; custom.devName='Hplay';
   applyCustom();
   settings.shuffle=false; settings.repeat='Off'; settings.clicker=true;
   appStats = { opens:0, playCount:0, playMs:0, quizAnswered:0, quizCorrect:0, quizBest:0, songPlays:{} };
@@ -1594,15 +1594,11 @@ const THEMES = {
 };
 let themeName = 'Blue';          // body color
 let wheelName = 'Match';         // wheel color ('Match' = follow body)
-const custom = { dark:false, wheelSize:'Gordan', sway:true, devName:'Hplay' };
-// wheel size presets, named for fun after some Valve favorites, smallest to biggest
+const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay' };
 const WHEEL_SIZES = {
-  Scout:  ['50vw', 'calc(var(--vh, 1vh) * 40)'],
-  Sniper: ['56vw', 'calc(var(--vh, 1vh) * 46)'],
-  Gordan: ['64vw', 'calc(var(--vh, 1vh) * 52)'],
-  Alex:   ['70vw', 'calc(var(--vh, 1vh) * 56)'],
-  Luis:   ['74vw', 'calc(var(--vh, 1vh) * 60)'],
-  Heavy:  ['82vw', 'calc(var(--vh, 1vh) * 68)'],
+  Small:  ['56vw', 'calc(var(--vh, 1vh) * 46)'],
+  Normal: ['64vw', 'calc(var(--vh, 1vh) * 52)'],
+  Big:    ['74vw', 'calc(var(--vh, 1vh) * 60)'],
 };
 // installed downloadable themes: { id, name, b:[4], w:[4], c:[3], lab, labsh } — same shape as THEMES entries
 let extThemes = [];
@@ -1625,7 +1621,7 @@ function applyWheelColor(name){ if(name==='Match'||themeByName(name)){ wheelName
 function applyCustom(){
   document.body.classList.toggle('darkui', custom.dark);
   document.body.classList.toggle('nosway', !custom.sway);
-  const sz = WHEEL_SIZES[custom.wheelSize] || WHEEL_SIZES.Gordan;
+  const sz = WHEEL_SIZES[custom.wheelSize] || WHEEL_SIZES.Normal;
   const r = document.documentElement.style;
   r.setProperty('--wheelsize', sz[0]);
   r.setProperty('--wheelmax', sz[1]);
@@ -1971,7 +1967,8 @@ function playlistCount(){
 const ABOUT_PAGES = [
   { big: () => custom.devName, body: () => `Songs: ${lib.length}<br>Playlists: ${playlistCount()}<br>Music stored on this device` },
   { big: () => 'Privacy', body: () => 'Analytics: none<br><br>Your music never leaves this device' },
-  { big: () => 'Software', body: () => 'Hplay v27.0<br>by host · IKSIX' },
+  // future version bumps: next up are Sniper, Gordan, Alex, Luis, Heavy...
+  { big: () => 'Software', body: () => 'Hplay v27.0 — Scout<br>by host · IKSIX' },
   { big: () => 'Tip', body: () => 'Hold center on a song, app, or note<br>to quickly delete or rename it<br><br>Hold center on Now Playing<br>to delete the current song' },
 ];
 
