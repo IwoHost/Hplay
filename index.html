@@ -350,6 +350,7 @@
   .art { transition:transform .25s ease; }
   input[type=file] { display:none; }
   @media (prefers-reduced-motion: reduce) { *, .art { transition:none !important; animation:none !important; } .ripple{ display:none; } }
+  body.reduceMotion *, body.reduceMotion .art { transition:none !important; animation:none !important; }
   .bezel{ position:relative; }
   .qbar{ position:absolute; left:3vw; right:3vw; top:3vw; z-index:8; height:calc(var(--su)*22);
     display:flex; align-items:center; gap:calc(var(--su)*4); padding:0 calc(var(--su)*6);
@@ -515,11 +516,14 @@ let query = '';
 let letterTimer = 0;
 const $file   = document.getElementById('filePick');
 const audio   = document.getElementById('audio');
+// declared this early because setUnits() (called immediately below) already reads custom.textScale
+const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay',
+  soundProtect:'Off', textScale:1, reduceMotion:false, haptics:true };
 
 function setUnits(){
   document.documentElement.style.setProperty('--vh', (window.innerHeight*0.01)+'px');
   const h = $screen.clientHeight || 1;
-  document.documentElement.style.setProperty('--su', (h/240)+'px');
+  document.documentElement.style.setProperty('--su', (h/240)*(custom.textScale||1)+'px');
 }
 // keep re-measuring while the layout settles (immersive mode engaging, boot
 // animation, system bars), then freeze it for good — no more resizing after that,
@@ -1002,9 +1006,9 @@ function quizAnswer(){
     quiz.score++; quiz.streak++;
     appStats.quizCorrect++;
     if(quiz.score > appStats.quizBest) appStats.quizBest = quiz.score;
-    if(navigator.vibrate) navigator.vibrate(12);
+    vibrate(12);
   }
-  else { quiz.score = 0; quiz.streak = 0; if(navigator.vibrate) navigator.vibrate([8,40,8]); }
+  else { quiz.score = 0; quiz.streak = 0; vibrate([8,40,8]); }
   saveAppStats();
   render();
   clearTimeout(quizNextTimer);
@@ -1094,6 +1098,7 @@ function saveSettings(){
   dbPut('kv', { shuffle:settings.shuffle, repeat:settings.repeat, clicker:settings.clicker,
                 theme:themeName, wheel:wheelName, volume:audio.volume,
                 dark:custom.dark, wheelSize:custom.wheelSize, sway:custom.sway, devName:custom.devName,
+                soundProtect:custom.soundProtect, textScale:custom.textScale, reduceMotion:custom.reduceMotion, haptics:custom.haptics,
                 sleepEnd:sleepEndMode, fadeSec:fadeSec }, 'settings');
 }
 async function eraseAll(){
@@ -1143,6 +1148,11 @@ async function restore(){
     if(s.wheelSize && WHEEL_SIZES[s.wheelSize]) custom.wheelSize = s.wheelSize;
     if(typeof s.sway==='boolean') custom.sway = s.sway;
     if(s.devName) custom.devName = String(s.devName).slice(0,20);
+    if(s.soundProtect && SOUND_PROTECT_LEVELS[s.soundProtect]!==undefined) custom.soundProtect = s.soundProtect;
+    if(typeof s.textScale==='number' && Object.values(TEXT_SCALES).includes(s.textScale)) custom.textScale = s.textScale;
+    if(typeof s.reduceMotion==='boolean') custom.reduceMotion = s.reduceMotion;
+    if(typeof s.haptics==='boolean') custom.haptics = s.haptics;
+    setUnits();
     applyCustom();
   }
   try{
@@ -1441,8 +1451,31 @@ function toast(m){ let el=document.getElementById('toast'); if(!el){ el=document
   el.style.cssText='position:fixed;left:50%;top:8%;transform:translateX(-50%);z-index:60;background:rgba(20,20,26,.92);color:#fff;font-size:13px;padding:8px 15px;border-radius:999px;transition:opacity .3s;'; document.body.appendChild(el);}
   el.textContent=m; el.style.opacity='1'; clearTimeout(toastT); toastT=setTimeout(()=>el.style.opacity='0',1800); }
 
+/* ---------- Sound Protect: a real-time limiter so playback can never exceed a set loudness ---------- */
+let musicCtx = null, musicCompressor = null, musicGraphReady = false;
+function ensureAudioGraph(){
+  if(musicGraphReady) return;
+  musicGraphReady = true;
+  try{
+    musicCtx = new (window.AudioContext||window.webkitAudioContext)();
+    const source = musicCtx.createMediaElementSource(audio);
+    musicCompressor = musicCtx.createDynamicsCompressor();
+    musicCompressor.knee.value = 6;
+    musicCompressor.ratio.value = 20;
+    musicCompressor.attack.value = 0.003;
+    musicCompressor.release.value = 0.25;
+    source.connect(musicCompressor).connect(musicCtx.destination);
+    applySoundProtect();
+  }catch(e){ musicGraphReady = false; }   // if Web Audio isn't available, audio still plays normally, just unlimited
+}
+function applySoundProtect(){
+  if(musicCtx && musicCtx.state==='suspended') musicCtx.resume();
+  if(!musicCompressor) return;
+  musicCompressor.threshold.value = SOUND_PROTECT_LEVELS[custom.soundProtect] ?? 0;
+}
 function playCurrent(){
   const s = nowSong(); if(!s) return;
+  ensureAudioGraph();
   audio.src = s.url;
   audio.play().catch(()=>{});
   npMode = 0;
@@ -1566,11 +1599,12 @@ if('mediaSession' in navigator){
 }
 
 /* ---------- clicker + haptics ---------- */
+function vibrate(pattern){ if(custom.haptics!==false && navigator.vibrate) navigator.vibrate(pattern); }
 let ac = null;
 function ensureAC(){ if(!ac){ try{ ac = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } if(ac&&ac.state==='suspended') ac.resume(); }
 let clickAlt = 0;
 function clickSound(kind){
-  if(navigator.vibrate) navigator.vibrate(kind==='select'?9:4);
+  vibrate(kind==='select'?9:4);
   if(!settings.clicker || !ac) return;
   const t = ac.currentTime;
   const o = ac.createOscillator(), g = ac.createGain();
@@ -1583,6 +1617,21 @@ function clickSound(kind){
   o.start(t); o.stop(t+0.03);
 }
 
+/* ---------- resume audio graph cleanly when the app returns from background ----------
+   Chromium/WebView auto-suspends AudioContexts while hidden to save power; if playback was
+   routed through one (Sound Protect, click sounds) it can stay silent for a moment after
+   returning, and <audio> itself can briefly stall — resume everything as soon as we're visible. */
+let wasPlayingBeforeHide = false;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='hidden'){
+    wasPlayingBeforeHide = !audio.paused;
+    return;
+  }
+  if(musicCtx && musicCtx.state==='suspended') musicCtx.resume();
+  if(ac && ac.state==='suspended') ac.resume();
+  if(wasPlayingBeforeHide && audio.paused) audio.play().catch(()=>{});
+});
+
 /* ---------- customization: body colors ---------- */
 const THEMES = {
   'Blue':   { b:['#2f8de4','#1b6fd0','#0f4fa8','#0a3a85'], w:['#3b63d8','#2c4fc4','#2140ac','#182f8c'], c:['#4a71e2','#3355cc','#2745b4'], lab:'#f2f5ff', labsh:'rgba(0,10,50,.6)' },
@@ -1594,12 +1643,14 @@ const THEMES = {
 };
 let themeName = 'Blue';          // body color
 let wheelName = 'Match';         // wheel color ('Match' = follow body)
-const custom = { dark:false, wheelSize:'Normal', sway:true, devName:'Hplay' };
 const WHEEL_SIZES = {
   Small:  ['56vw', 'calc(var(--vh, 1vh) * 46)'],
   Normal: ['64vw', 'calc(var(--vh, 1vh) * 52)'],
   Big:    ['74vw', 'calc(var(--vh, 1vh) * 60)'],
 };
+// Sound Protect: caps peak loudness with a real-time limiter, in dB (0 = off / no limiting)
+const SOUND_PROTECT_LEVELS = { Off:0, Mild:-8, Medium:-14, Strong:-20 };
+const TEXT_SCALES = { Normal:1, Large:1.15, Larger:1.3 };
 // installed downloadable themes: { id, name, b:[4], w:[4], c:[3], lab, labsh } — same shape as THEMES entries
 let extThemes = [];
 function themeByName(name){ return THEMES[name] || extThemes.find(t=>t.name===name); }
@@ -1621,10 +1672,12 @@ function applyWheelColor(name){ if(name==='Match'||themeByName(name)){ wheelName
 function applyCustom(){
   document.body.classList.toggle('darkui', custom.dark);
   document.body.classList.toggle('nosway', !custom.sway);
+  document.body.classList.toggle('reduceMotion', !!custom.reduceMotion);
   const sz = WHEEL_SIZES[custom.wheelSize] || WHEEL_SIZES.Normal;
   const r = document.documentElement.style;
   r.setProperty('--wheelsize', sz[0]);
   r.setProperty('--wheelmax', sz[1]);
+  applySoundProtect();
 }
 
 /* ---------- fullscreen: any tap pushes the phone into Hplay mode ---------- */
@@ -1677,7 +1730,7 @@ function enterReorderFor(album){
   if(sc.type==='songs' && sc.filter && sc.filter.album===album){
     sc.reordering = true;
     if(listOf(sc.filter).length) sc.sel = 1;   // land on the first song, not the Edit Playlist row
-    if(navigator.vibrate) navigator.vibrate(14);
+    vibrate(14);
     toast('Rotate to move · press center to drop');
     render();
   }
@@ -1787,9 +1840,26 @@ function screenDef(sc){
       {lab:'Shuffle', val: settings.shuffle?'Songs':'Off', act(){ settings.shuffle=!settings.shuffle; saveSettings(); render(); }},
       {lab:'Repeat',  val: settings.repeat, act(){ settings.repeat = settings.repeat==='Off'?'One':settings.repeat==='One'?'All':'Off'; saveSettings(); render(); }},
       {lab:'Clicker', val: settings.clicker?'On':'Off', act(){ settings.clicker=!settings.clicker; saveSettings(); render(); }},
+      {lab:'Sound Protect', val: custom.soundProtect, act(){
+        const o=Object.keys(SOUND_PROTECT_LEVELS);
+        custom.soundProtect = o[(o.indexOf(custom.soundProtect)+1)%o.length];
+        applySoundProtect(); saveSettings(); render();
+      }},
       {lab:'Sleep Timer', val: sleepMin?fmtClock(sleepRemaining()):'Off', arrow:true, go:{type:'sleeptimer', sel:0, top:0}},
+      {lab:'Accessibility', arrow:true, go:{type:'accessibility', sel:0, top:0}},
       {lab:'About', arrow:true, go:{type:'about'}},
       {lab:'Erase Everything', danger:true, act(){ eraseAll(); }},
+    ]};
+    case 'accessibility': return {title:'Accessibility', items:[
+      {lab:'Display Size', val: Object.keys(TEXT_SCALES).find(k=>TEXT_SCALES[k]===custom.textScale) || 'Normal', act(){
+        const o=Object.keys(TEXT_SCALES);
+        const cur = o.find(k=>TEXT_SCALES[k]===custom.textScale) || 'Normal';
+        const next = o[(o.indexOf(cur)+1)%o.length];
+        custom.textScale = TEXT_SCALES[next];
+        setUnits(); saveSettings(); render();
+      }},
+      {lab:'Reduce Motion', val: custom.reduceMotion?'On':'Off', act(){ custom.reduceMotion=!custom.reduceMotion; applyCustom(); saveSettings(); render(); }},
+      {lab:'Haptics', val: custom.haptics?'On':'Off', act(){ custom.haptics=!custom.haptics; saveSettings(); render(); }},
     ]};
     case 'search': {
       const q=(query||'').toLowerCase();
@@ -1967,8 +2037,8 @@ function playlistCount(){
 const ABOUT_PAGES = [
   { big: () => custom.devName, body: () => `Songs: ${lib.length}<br>Playlists: ${playlistCount()}<br>Music stored on this device` },
   { big: () => 'Privacy', body: () => 'Analytics: none<br><br>Your music never leaves this device' },
-  // future version bumps: next up are Sniper, Gordan, Alex, Luis, Heavy...
-  { big: () => 'Software', body: () => 'Hplay v27.0 — Scout<br>by host · IKSIX' },
+  // future version bumps: next up are Gordan, Alex, Luis, Heavy...
+  { big: () => 'Software', body: () => 'Hplay v28.0 — Sniper<br>by host · IKSIX' },
   { big: () => 'Tip', body: () => 'Hold center on a song, app, or note<br>to quickly delete or rename it<br><br>Hold center on Now Playing<br>to delete the current song' },
 ];
 
@@ -2239,7 +2309,7 @@ function scroll(dir, mult){
       playlistOrder[album] = ids;
       savePlaylistOrder();
       sc.sel = to + offset;
-      if(navigator.vibrate) navigator.vibrate(6);
+      vibrate(6);
     }
     render();
     return;
@@ -2248,7 +2318,7 @@ function scroll(dir, mult){
   if(!def.items) return;
   const atEdge = (dir>0 && sc.sel===def.items.length-1) || (dir<0 && sc.sel===0);
   sc.sel = Math.max(0, Math.min(def.items.length-1, sc.sel + dir*mult));
-  if(atEdge && navigator.vibrate) navigator.vibrate([2,14,2]);
+  if(atEdge) vibrate([2,14,2]);
   if(sc.type==='colors'){ const n=allThemeNames()[sc.sel]; if(n){ applyTheme(n); saveSettings(); } }        // live preview
   if(sc.type==='wcolors'){ const n=['Match',...allThemeNames()][sc.sel]; if(n){ applyWheelColor(n); saveSettings(); } }
   if(def.items.length > 25){ const lab=(def.items[sc.sel].lab||'').trim(); showLetter((lab[0]||'').toUpperCase()); }
@@ -2306,6 +2376,7 @@ async function resumeLastOrPlayAll(){
   }catch(e){}
   if(lib.length){ buildPlaylist(lib.map(s=>s.id), lib[0].id, 'All Songs'); stack.push({type:'np'}); render(); }
 }
+let lastPlayPressTs = 0;
 function playPause(){
   ensureAC(); clickSound();
   if(!nowSong()){
@@ -2313,7 +2384,10 @@ function playPause(){
     return;
   }
   if(audio.paused) audio.play(); else audio.pause();
-  if(cur().type!=='np') stack.push({type:'np'});
+  const now = Date.now();
+  const isDoubleTap = now - lastPlayPressTs < 400;
+  lastPlayPressTs = isDoubleTap ? 0 : now;
+  if(isDoubleTap && cur().type!=='np') stack.push({type:'np'});
   render();
 }
 
@@ -2400,10 +2474,10 @@ function gStart(x,y,type){
   if(ha==='scrub-fwd' || ha==='scrub-back'){
     if(nowSong()){
       const dir = ha==='scrub-fwd' ? 1 : -1;
-      ptr.holdTimer = setTimeout(()=>{ if(!ptr) return; ptr.heldFired=true; if(navigator.vibrate) navigator.vibrate(14); startScrub(dir); }, 350);
+      ptr.holdTimer = setTimeout(()=>{ if(!ptr) return; ptr.heldFired=true; vibrate(14); startScrub(dir); }, 350);
     }
   } else if(ha){
-    ptr.holdTimer = setTimeout(()=>{ if(!ptr) return; ptr.heldFired=true; hidePreview(); if(navigator.vibrate) navigator.vibrate(18); ha(); }, 500);
+    ptr.holdTimer = setTimeout(()=>{ if(!ptr) return; ptr.heldFired=true; hidePreview(); vibrate(18); ha(); }, 500);
   }
   if(dist(x,y,r) < 0.4 && cur().type==='np'){
     previewTimer = setTimeout(()=>{
